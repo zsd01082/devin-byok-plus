@@ -19,6 +19,7 @@ let _promptDumpCache = {
   content: "",
   path: ""
 };
+const ANTHROPIC_TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 function getCustomSystemPrompt() {
   if (!SYSTEM_PROMPT_OVERRIDE || !SYSTEM_PROMPT_PATH) {
     return "";
@@ -220,6 +221,29 @@ function warnUnsignedThinkingStripped() {
     console.warn("  ⚠️  Stripped unsigned Claude thinking block before forwarding. Set STRIP_UNSIGNED_THINKING=false to preserve it.");
   }
 }
+function stableHash(arg0) {
+  const tmp1 = String(arg0 || "");
+  let tmp2 = 2166136261;
+  for (let tmp0 = 0; tmp0 < tmp1.length; tmp0++) {
+    tmp2 ^= tmp1.charCodeAt(tmp0);
+    tmp2 = Math.imul(tmp2, 16777619);
+  }
+  return (tmp2 >>> 0).toString(36);
+}
+function sanitizeAnthropicToolId(arg0, arg1) {
+  const tmp1 = String(arg0 || "");
+  if (ANTHROPIC_TOOL_ID_PATTERN.test(tmp1)) {
+    return tmp1;
+  }
+  const tmp2 = tmp1.replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+  const tmp3 = (tmp2 || "tool") + "_" + stableHash(tmp1 || "empty");
+  let tmp4 = tmp3;
+  let tmp5 = 1;
+  while (arg1.has(tmp4)) {
+    tmp4 = tmp3 + "_" + tmp5++;
+  }
+  return tmp4;
+}
 function toAnthropicMessage(arg0) {
   const {
     source: tmp1,
@@ -339,11 +363,10 @@ function toAnthropicMessage(arg0) {
   return null;
 }
 function sanitizeAnthropicMessages(arg0) {
-  if (!STRIP_UNSIGNED_THINKING) {
-    return arg0;
-  }
   let tmp1 = 0;
   const tmp2 = [];
+  const tmp3 = new Map();
+  const tmp4 = new Set();
   for (const tmp0 of arg0 || []) {
     if (!tmp0 || !Array.isArray(tmp0.content)) {
       tmp2.push(tmp0);
@@ -354,7 +377,32 @@ function sanitizeAnthropicMessages(arg0) {
       if (tmp12) {
         tmp1++;
       }
-      return !tmp12;
+      return !tmp12 || !STRIP_UNSIGNED_THINKING;
+    }).map(arg02 => {
+      if (arg02?.type === "tool_use") {
+        const tmp12 = String(arg02.id || "");
+        const tmp22 = tmp3.get(tmp12) || sanitizeAnthropicToolId(tmp12, tmp4);
+        tmp3.set(tmp12, tmp22);
+        tmp4.add(tmp22);
+        if (tmp22 !== tmp12) {
+          console.warn("  ⚠️  Normalized Anthropic tool_use.id for Bedrock compatibility: " + (tmp12 || "(empty)") + " -> " + tmp22);
+        }
+        return {
+          ...arg02,
+          id: tmp22
+        };
+      }
+      if (arg02?.type === "tool_result") {
+        const tmp12 = String(arg02.tool_use_id || "");
+        const tmp22 = tmp3.get(tmp12);
+        if (tmp22 && tmp22 !== tmp12) {
+          return {
+            ...arg02,
+            tool_use_id: tmp22
+          };
+        }
+      }
+      return arg02;
     });
     if (tmp02.length === 0) {
       if (tmp0.role === "assistant") {
@@ -378,7 +426,7 @@ function sanitizeAnthropicMessages(arg0) {
       });
     }
   }
-  if (tmp1 > 0) {
+  if (tmp1 > 0 && STRIP_UNSIGNED_THINKING) {
     warnUnsignedThinkingStripped();
   }
   return tmp2;
@@ -420,7 +468,7 @@ function mergeConsecutiveMessages(arg0) {
   }
   return tmp1;
 }
-export { extractFunctionalSections, compactPromptText, sanitizeAnthropicMessages };
+export { extractFunctionalSections, compactPromptText, sanitizeAnthropicMessages, sanitizeAnthropicToolId };
 export function parseGetChatMessageRequest(arg0, arg1) {
   const tmp2 = unwrapRequest(arg0, arg1);
   const tmp3 = parseFields(tmp2);

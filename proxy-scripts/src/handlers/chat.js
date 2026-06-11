@@ -137,6 +137,9 @@ function buildProviderErrorMessage(arg0, arg1, arg2) {
   if (/signature.*field required|field required.*signature|validationexception/.test(tmp3) && tmp3.includes("signature")) {
     return "[" + arg0 + " Error " + arg1 + "] Bedrock/Anthropic thinking 历史缺少 signature。请开启新对话，或关闭 BYOK #2 思考强度；代理默认会剔除无 signature 的 thinking 块。";
   }
+  if (/thinking.*enabled.*not supported|enabled.*not supported.*adaptive|output_config\.effort/.test(tmp3)) {
+    return "[" + arg0 + " Error " + arg1 + "] 当前 Claude/Bedrock 模型要求 adaptive thinking。请升级插件或确认模型名是 Claude 4 系列；代理会对 Claude 4 使用 thinking.adaptive + output_config.effort。";
+  }
   if (/thinking_config|unknown.*thinking|invalid.*thinking|extra_body|unrecognized.*field/.test(tmp3)) {
     return "[" + arg0 + " Error " + arg1 + "] 当前网关不支持 Gemini/OpenAI 兼容 thinking 扩展字段，代理会尝试不带 thinking 的 Chat Completions 回退。";
   }

@@ -1578,8 +1578,8 @@ class SidebarProvider {
           }
           const tmp2 = this.writeModeScopedConfig(tmp03);
           const tmp3 = this.getRuntimeConfigForCurrentMode(tmp2);
-          this.postActionState("config", "success", "配置已保存");
           const tmp4 = this.proxyManager.getStatus();
+          let tmp5 = "配置已保存；代理未运行，下次启动生效";
           if (tmp4.running) {
             const {
               hybridPort: tmp04,
@@ -1588,16 +1588,28 @@ class SidebarProvider {
             const tmp22 = tmp4.hybridPort !== tmp04 || tmp4.inferencePort !== tmp12;
             if (tmp22) {
               this.proxyManager.stop();
-              await this.proxyManager.start("both", tmp3);
+              const tmp32 = await this.proxyManager.start("both", tmp3);
+              tmp5 = tmp32 ? "配置已保存；端口变更，代理已重启并使用新配置" : "配置已保存；端口变更但代理重启失败：" + (this.proxyManager.getLastStartError() || "未知错误");
               this.postActionState("patch", "success", "端口已变更；如需让 Devin Desktop 使用新端口，请手动点击“安装补丁”并重载窗口");
             } else {
               const tmp05 = {
                 hybridPort: tmp04,
                 inferencePort: tmp12
               };
-              await this.proxyManager.reloadRuntimeConfig(tmp3, tmp05);
+              const tmp32 = await this.proxyManager.reloadRuntimeConfig(tmp3, tmp05);
+              if (tmp32.ok) {
+                tmp5 = "配置已保存，并已热更新到运行中的代理";
+              } else {
+                const tmp42 = tmp32.errors.join("；") || "未知错误";
+                this.logLines.push("配置热更新失败，准备自动重启代理：" + tmp42);
+                this.proxyManager.stop();
+                await new Promise(arg0 => setTimeout(arg0, 500));
+                const tmp52 = await this.proxyManager.start("both", tmp3);
+                tmp5 = tmp52 ? "配置已保存；热更新失败但已自动重启代理生效（" + tmp42 + "）" : "配置已保存；热更新失败且代理重启失败：" + (this.proxyManager.getLastStartError() || tmp42);
+              }
             }
           }
+          this.postActionState("config", tmp5.includes("失败") ? "error" : "success", tmp5);
           this.refresh();
           break;
         }

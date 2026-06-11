@@ -149,7 +149,7 @@ export function buildGeminiThinkingPayload(model, effort, fallbackEffort = "medi
 
 export function supportsAdaptiveClaudeThinking(model) {
   const normalized = String(model || "").trim().toLowerCase().replace(/-thinking$/i, "");
-  return /claude-(opus-4-[6-8]|sonnet-4-6|mythos)/.test(normalized);
+  return /claude-(?:[a-z0-9]+[-._])*(opus|sonnet)-4(?:[-._:]|$)|claude-mythos/.test(normalized);
 }
 
 export function buildAnthropicThinkingPayload(model, effort, fallbackEffort = "medium") {

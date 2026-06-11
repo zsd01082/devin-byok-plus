@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 
 import { sanitizeAnthropicMessages } from "../proxy-scripts/src/handlers/parse-request.js";
 import { shouldFallbackToChatCompletions, toChatCompletionsMessages, buildOpenAIChatCompletionsBody } from "../proxy-scripts/src/handlers/chat.js";
+import { buildAnthropicThinkingPayload, supportsAdaptiveClaudeThinking } from "../proxy-scripts/src/handlers/byok-slots.js";
 import { buildGatewayCapabilityKey, clearGatewayCapabilityCache, getGatewayCapability, markGatewayCapability, _getGatewayCapabilityCacheSizeForTests } from "../proxy-scripts/src/handlers/gateway-capability.js";
 
 const require = createRequire(import.meta.url);
@@ -41,6 +42,34 @@ test("sanitizeAnthropicMessages strips unsigned thinking and keeps signed thinki
     type: "text",
     text: "done"
   }]);
+});
+
+test("sanitizeAnthropicMessages normalizes Bedrock-incompatible tool ids", () => {
+  const messages = [{
+    role: "assistant",
+    content: [{
+      type: "tool_use",
+      id: "toolu_01.bad:id",
+      name: "read_file",
+      input: {
+        path: "a.txt"
+      }
+    }]
+  }, {
+    role: "user",
+    content: [{
+      type: "tool_result",
+      tool_use_id: "toolu_01.bad:id",
+      content: "ok"
+    }]
+  }];
+
+  const result = sanitizeAnthropicMessages(messages);
+  const toolUseId = result[0].content[0].id;
+
+  assert.match(toolUseId, /^[a-zA-Z0-9_-]+$/);
+  assert.notEqual(toolUseId, "toolu_01.bad:id");
+  assert.equal(result[1].content[0].tool_use_id, toolUseId);
 });
 
 test("shouldFallbackToChatCompletions detects unsupported responses gateways", () => {
@@ -114,6 +143,30 @@ test("buildOpenAIChatCompletionsBody can omit Gemini thinking fields", () => {
   assert.ok(withThinking.thinking_config || withThinking.extra_body);
   assert.equal(withoutThinking.thinking_config, undefined);
   assert.equal(withoutThinking.extra_body, undefined);
+});
+
+test("Claude 4 Bedrock model ids use adaptive thinking", () => {
+  const model = "us.anthropic.claude-sonnet-4-20250514-v1:0";
+  const payload = buildAnthropicThinkingPayload(model, "high");
+
+  assert.equal(supportsAdaptiveClaudeThinking(model), true);
+  assert.deepEqual(payload, {
+    thinking: {
+      type: "adaptive"
+    },
+    output_config: {
+      effort: "high"
+    }
+  });
+});
+
+test("Claude 4 regional aliases use adaptive thinking", () => {
+  const model = "Claude-jp-opus-4-8-thinking";
+  const payload = buildAnthropicThinkingPayload(model, "medium");
+
+  assert.equal(supportsAdaptiveClaudeThinking(model), true);
+  assert.equal(payload.thinking.type, "adaptive");
+  assert.equal(payload.output_config.effort, "medium");
 });
 
 test("gateway capability cache uses detailed keys and can be cleared", () => {
