@@ -308,6 +308,37 @@
     }
     fn20();
   }
+  function fn24a() {
+    const tmp12 = fn4("cfgAnthropicPath");
+    const tmp22 = fn4("cfgOpenaiPath");
+    if (!tmp12 || !tmp22 || fn4("advancedRouteBody")) {
+      return;
+    }
+    const tmp32 = document.createElement("div");
+    tmp32.className = "guide-block";
+    tmp32.style.marginBottom = "10px";
+    tmp32.innerHTML = "<div class=\"card-head between\" style=\"margin-bottom:6px;padding:0\"><span class=\"toggle-section collapsed\" data-ws-toggle=\"advancedRouteBody\">高级路由</span><span class=\"badge badge-warn\">可选</span></div><div id=\"advancedRouteBody\" class=\"hidden\"><div class=\"fg\"><label>Anthropic API Path</label></div><div class=\"fg\"><label>OpenAI API Path</label></div><div class=\"guide-note\">GPT 默认先走 <code>/v1/responses</code>；网关不支持时会回退 <code>/v1/chat/completions</code>。如网关明确只支持旧接口，可在这里直接填写。</div></div>";
+    const tmp4 = fn4("cfgMaxTokens");
+    const tmp5 = tmp4 && tmp4.parentElement && tmp4.parentElement.parentElement;
+    const tmp6 = tmp5 && tmp5.parentElement || tmp22.parentElement;
+    if (tmp6 && tmp5) {
+      tmp6.insertBefore(tmp32, tmp5);
+    } else {
+      tmp22.insertAdjacentElement("afterend", tmp32);
+    }
+    const tmp7 = fn4("advancedRouteBody");
+    const tmp8 = tmp7 && tmp7.querySelectorAll(".fg");
+    tmp12.type = "text";
+    tmp12.placeholder = "/v1/messages";
+    tmp22.type = "text";
+    tmp22.placeholder = "/v1/responses 或 /v1/chat/completions";
+    if (tmp8 && tmp8[0]) {
+      tmp8[0].appendChild(tmp12);
+    }
+    if (tmp8 && tmp8[1]) {
+      tmp8[1].appendChild(tmp22);
+    }
+  }
   function fn25(arg0, arg1, arg2) {
     if (!arg0) {
       return;
@@ -645,6 +676,15 @@
       fn5("probeModelLink", {
         config: fn27()
       });
+    } else if (tmp32 === "importExternalConfig") {
+      const tmp02 = fn2(Number(tmp22.getAttribute("data-ws-slot") || "1"));
+      const tmp13 = (tmp22.getAttribute("data-ws-source") || "claude").toLowerCase();
+      const tmp14 = tmp13 === "codex" ? "GPT/Codex" : "Claude";
+      fn7("config", "busy", "正在读取 " + tmp14 + " 用户配置...");
+      fn5("importExternalConfig", {
+        slot: tmp02,
+        source: tmp13
+      });
     } else if (tmp32 === "fetchModels") {
       const tmp02 = fn2(Number(tmp22.getAttribute("data-ws-slot") || "1"));
       const tmp13 = fn11(tmp02).trim();
@@ -753,6 +793,30 @@
       } else {
         fn32(tmp12.data, tmp12.error, tmp02);
       }
+    } else if (tmp12.type === "externalConfigImported") {
+      const tmp02 = fn2(tmp12.slot);
+      if (tmp12.host) {
+        fn13("cfgByok" + tmp02 + "Host", tmp12.host);
+      }
+      if (tmp12.apiKey) {
+        fn13("cfgByok" + tmp02 + "Key", tmp12.apiKey);
+      }
+      if (tmp12.thinkingEffort) {
+        fn13("cfgByok" + tmp02 + "ThinkingEffort", tmp12.thinkingEffort);
+      }
+      const tmp13 = fn4("cfgByok" + tmp02 + "Model");
+      if (tmp12.model && tmp13) {
+        fn25(tmp13, [{
+          id: tmp12.model,
+          name: tmp12.model
+        }], tmp12.model);
+        tmp3["lastSelectedModel" + tmp02] = tmp12.model;
+      }
+      fn9("已导入并保存外部配置，正在同步模型列表", tmp02);
+      fn20();
+      if (tmp12.message) {
+        fn7("config", "success", tmp12.message);
+      }
     } else if (tmp12.type === "modelProbeResult") {
       fn33(tmp12.result);
     } else if (tmp12.type === "environmentCheck") {
@@ -778,6 +842,7 @@
       tmp02.scrollTop = tmp02.scrollHeight;
     }
   });
+  fn24a();
   fn5("getStatus");
   [1, 2].forEach(arg0 => {
     const tmp12 = fn();

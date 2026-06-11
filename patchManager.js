@@ -7,7 +7,18 @@ exports.PatchManager = undefined;
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const vscode = require("vscode");
+let vscode;
+try {
+  vscode = require("vscode");
+} catch {
+  vscode = {
+    window: {
+      showInformationMessage: () => undefined,
+      showWarningMessage: () => undefined,
+      showErrorMessage: () => undefined
+    }
+  };
+}
 const child_process_1 = require("child_process");
 const PATCH_RULES = [{
   "name": "P1: 重定向 API Server URL",
@@ -347,59 +358,8 @@ class PatchManager {
       }))
     };
   }
-  static apply(tmp0) {
-    const tmp1 = PatchManager.resolveExtensionJsPath(tmp0);
-    if (!tmp1) {
-      return {
-        success: false,
-        applied: 0,
-        skipped: 0,
-        failed: 0,
-        details: ["找不到 Devin Desktop extension.js"]
-      };
-    }
-    const tmp2 = PatchManager.resolveBackupPath(tmp1);
-    if (!PatchManager.resolveExistingBackupPath(tmp1)) {
-      fs.copyFileSync(tmp1, tmp2);
-    }
-    let tmp3 = fs.readFileSync(tmp1, "utf-8");
-    const tmp4 = [];
-    let tmp5 = 0;
-    let tmp6 = 0;
-    let tmp7 = 0;
-    for (const tmp02 of getPatches()) {
-      if (PatchManager.isPatched(tmp3, tmp02)) {
-        tmp6++;
-        tmp4.push("[跳过] " + tmp02.name + " (已应用)");
-        continue;
-      }
-      if (!PatchManager.isAvailable(tmp3, tmp02)) {
-        tmp7++;
-        tmp4.push("[缺失] " + tmp02.name + " (当前版本不包含此模式)");
-        continue;
-      }
-      const tmp03 = PatchManager.applyPatchContent(tmp3, tmp02, "http://127.0.0.1:3006", "http://127.0.0.1:3001");
-      if (!tmp03.changed) {
-        tmp7++;
-        tmp4.push("[失败] " + tmp02.name + " (匹配到但替换未生效)");
-        continue;
-      }
-      tmp3 = tmp03.content;
-      tmp5++;
-      tmp4.push("[成功] " + tmp02.name);
-    }
-    if (tmp5 > 0) {
-      fs.writeFileSync(tmp1, tmp3, "utf-8");
-      PatchManager.updateChecksum(tmp1);
-    }
-    const tmp8 = {
-      success: tmp7 === 0,
-      applied: tmp5,
-      skipped: tmp6,
-      failed: tmp7,
-      details: tmp4
-    };
-    return tmp8;
+  static apply(tmp0, tmp1 = "http://127.0.0.1:3006", tmp2 = "http://127.0.0.1:3001") {
+    return PatchManager.applyWithCustomUrls(tmp1, tmp2, tmp0);
   }
   static revert(tmp0) {
     const tmp1 = PatchManager.resolveExtensionJsPath(tmp0);

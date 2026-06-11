@@ -5,12 +5,15 @@ import { StringDecoder } from "node:string_decoder";
 import { parseGetChatMessageRequest } from "./parse-request.js";
 import { buildErrorChunk } from "./build-response.js";
 import { AnthropicStreamProcessor, parseSSEChunk } from "./anthropic-stream.js";
-import { OpenAIStreamProcessor, parseOpenAISSEChunk } from "./openai-stream.js";
+import { OpenAIStreamProcessor, ChatCompletionsStreamProcessor, parseOpenAISSEChunk } from "./openai-stream.js";
 import { wrapEnvelope, endOfStreamEnvelope, streamHeaders } from "../connect.js";
 import { getByokSlot, buildAnthropicThinkingPayload, buildGeminiThinkingPayload, thinkingEffortToAnthropicBudget, thinkingEffortToGeminiBudget, thinkingEffortToOpenAIReasoningEffort, detectModelProvider, usesGeminiThinkingLevel, sanitizeGeminiThinkingEffort } from "./byok-slots.js";
 import { getProviderConfig, getRuntimeConfig, getSlotModel, getSlotThinkingEffort } from "./models.js";
 import { buildTextDelta } from "./build-response.js";
 import { emitChatStart, emitChatEnd, emitAIText, emitToolCall, emitStreamStatus, consumeInjectedMessages, getActiveMonitorTarget } from "../ws-bridge.js";
+import { buildGatewayCapabilityKey, getGatewayCapability, markGatewayCapability } from "./gateway-capability.js";
+import { isResponsesApiPath, shouldFallbackToChatCompletions, toChatCompletionsMessages, toChatCompletionsPath } from "./openai-request.js";
+export { isResponsesApiPath, shouldFallbackToChatCompletions, toChatCompletionsMessages, toChatCompletionsPath } from "./openai-request.js";
 const keepAliveAgent = new https.Agent({
   keepAlive: true,
   keepAliveMsecs: 30000,
@@ -128,6 +131,15 @@ function sanitizeLogBody(arg0) {
 }
 function buildProviderErrorMessage(arg0, arg1, arg2) {
   const tmp3 = String(arg2 || "").toLowerCase();
+  if (/convert_request_failed|not implemented|not_implemented|new_api_error|responses api|invalid.*responses/.test(tmp3)) {
+    return "[" + arg0 + " Error " + arg1 + "] 当前网关不支持 OpenAI Responses API，代理会尝试回退到 /v1/chat/completions；若仍失败，请在高级路由中将 OpenAI API Path 设置为 /v1/chat/completions。";
+  }
+  if (/signature.*field required|field required.*signature|validationexception/.test(tmp3) && tmp3.includes("signature")) {
+    return "[" + arg0 + " Error " + arg1 + "] Bedrock/Anthropic thinking 历史缺少 signature。请开启新对话，或关闭 BYOK #2 思考强度；代理默认会剔除无 signature 的 thinking 块。";
+  }
+  if (/thinking_config|unknown.*thinking|invalid.*thinking|extra_body|unrecognized.*field/.test(tmp3)) {
+    return "[" + arg0 + " Error " + arg1 + "] 当前网关不支持 Gemini/OpenAI 兼容 thinking 扩展字段，代理会尝试不带 thinking 的 Chat Completions 回退。";
+  }
   if (arg1 === 401 && tmp3.includes("invalid") && tmp3.includes("key")) {
     return "[" + arg0 + " Error 401] Invalid API key. If using the cloud gateway, check the server-side upstream key; otherwise update the local " + arg0 + " key in the control panel.";
   }
@@ -479,6 +491,267 @@ function getForwardedToolChoice(arg0, arg1, arg2) {
   console.log("  ⚠️  Ignoring " + arg2 + " named tool_choice \"" + arg1.name + "\" because the tool definition is unavailable");
   return undefined;
 }
+function shouldRetryWithoutGeminiThinking(arg0, arg1) {
+  if (![400, 422, 500, 501, 502].includes(arg0)) {
+    return false;
+  }
+  const tmp1 = String(arg1 || "").toLowerCase();
+  return /thinking_config|thinking.*unsupported|extra_body|unknown.*thinking|invalid.*thinking|unsupported.*field|unrecognized.*field|additional properties/.test(tmp1);
+}
+function mapChatCompletionsToolChoice(arg0) {
+  if (!arg0) {
+    return undefined;
+  }
+  if (arg0.type === "auto") {
+    return "auto";
+  }
+  if (arg0.type === "any") {
+    return "required";
+  }
+  if (arg0.type === "tool") {
+    return {
+      type: "function",
+      function: {
+        name: arg0.name
+      }
+    };
+  }
+  return undefined;
+}
+function buildOpenAIResponsesBody({
+  systemPrompt: tmp2,
+  messages: tmp3,
+  tools: tmp4,
+  toolChoice: tmp5,
+  resolvedModel: tmp6,
+  serviceTier: tmp7,
+  thinkingOptions: tmp12,
+  initiator: tmp9,
+  forwardTools: tmp16
+}) {
+  const tmp15 = toOpenAIMessages(tmp2, tmp3);
+  const tmp17 = tmp16 ? getForwardedToolChoice(tmp4, tmp5, "OpenAI") : undefined;
+  const tmp19 = {
+    model: tmp6,
+    input: tmp15,
+    stream: true
+  };
+  const tmp20 = getMaxTokens();
+  if (tmp20 > 0) {
+    tmp19.max_output_tokens = tmp20;
+  }
+  const tmp21 = tmp12?.thinkingEnabled === true;
+  if (OPENAI_ENABLE_REASONING && tmp21) {
+    if (isGeminiModel(tmp6)) {
+      const tmp02 = buildGeminiThinkingPayload(tmp6, tmp12?.reasoningEffort);
+      if (tmp02?.thinkingConfig) {
+        const tmp03 = {};
+        if (tmp02.thinkingConfig.thinking_level) {
+          tmp03.thinking_level = tmp02.thinkingConfig.thinking_level;
+        } else if (tmp02.thinkingConfig.thinking_budget) {
+          tmp03.thinking_budget = tmp02.thinkingConfig.thinking_budget;
+        }
+        tmp19.thinking_config = tmp03;
+        tmp19.extra_body = {
+          ...(tmp19.extra_body || {}),
+          thinking_config: tmp03
+        };
+      }
+    } else {
+      const tmp02 = {
+        summary: OPENAI_REASONING_SUMMARY
+      };
+      tmp19.reasoning = tmp02;
+      if (tmp12?.reasoningEffort) {
+        tmp19.reasoning.effort = thinkingEffortToOpenAIReasoningEffort(tmp12.reasoningEffort);
+      }
+    }
+  }
+  if (tmp7) {
+    tmp19.service_tier = tmp7;
+  }
+  if (tmp16 && tmp4 && tmp4.length > 0) {
+    tmp19.tools = tmp4.map(arg02 => ({
+      type: "function",
+      name: arg02.name,
+      description: arg02.description || "",
+      parameters: typeof arg02.input_schema === "string" ? JSON.parse(arg02.input_schema) : arg02.input_schema
+    }));
+    if (tmp17) {
+      if (tmp17.type === "auto") {
+        tmp19.tool_choice = "auto";
+      } else if (tmp17.type === "any") {
+        tmp19.tool_choice = "required";
+      } else if (tmp17.type === "tool") {
+        tmp19.tool_choice = {
+          type: "function",
+          name: tmp17.name
+        };
+      }
+    }
+  }
+  return tmp19;
+}
+export function buildOpenAIChatCompletionsBody({
+  systemPrompt: tmp2,
+  messages: tmp3,
+  tools: tmp4,
+  toolChoice: tmp5,
+  resolvedModel: tmp6,
+  thinkingOptions: tmp12,
+  forwardTools: tmp16,
+  omitGeminiThinking: tmp18 = false
+}) {
+  const tmp17 = tmp16 ? getForwardedToolChoice(tmp4, tmp5, "OpenAI") : undefined;
+  const tmp19 = {
+    model: tmp6,
+    messages: toChatCompletionsMessages(tmp2, tmp3),
+    stream: true
+  };
+  const tmp20 = getMaxTokens();
+  if (tmp20 > 0) {
+    tmp19.max_tokens = tmp20;
+  }
+  const tmp21 = tmp12?.thinkingEnabled === true;
+  if (OPENAI_ENABLE_REASONING && tmp21) {
+    if (isGeminiModel(tmp6)) {
+      if (!tmp18) {
+        const tmp02 = buildGeminiThinkingPayload(tmp6, tmp12?.reasoningEffort);
+        if (tmp02?.thinkingConfig) {
+          const tmp03 = {};
+          if (tmp02.thinkingConfig.thinking_level) {
+            tmp03.thinking_level = tmp02.thinkingConfig.thinking_level;
+          } else if (tmp02.thinkingConfig.thinking_budget) {
+            tmp03.thinking_budget = tmp02.thinkingConfig.thinking_budget;
+          }
+          tmp19.thinking_config = tmp03;
+          tmp19.extra_body = {
+            ...(tmp19.extra_body || {}),
+            thinking_config: tmp03
+          };
+        }
+      }
+    } else {
+      const tmp02 = thinkingEffortToOpenAIReasoningEffort(tmp12?.reasoningEffort);
+      if (tmp02) {
+        tmp19.reasoning_effort = tmp02;
+      }
+    }
+  }
+  if (tmp16 && tmp4 && tmp4.length > 0) {
+    tmp19.tools = tmp4.map(arg02 => ({
+      type: "function",
+      function: {
+        name: arg02.name,
+        description: arg02.description || "",
+        parameters: typeof arg02.input_schema === "string" ? JSON.parse(arg02.input_schema) : arg02.input_schema
+      }
+    }));
+    const tmp03 = mapChatCompletionsToolChoice(tmp17);
+    if (tmp03) {
+      tmp19.tool_choice = tmp03;
+    }
+  }
+  return tmp19;
+}
+function attachOpenAISseStream(arg02, {
+  processor: tmp13,
+  lifecycle: tmp24,
+  timing: tmp10,
+  clientResponse: tmp11,
+  onStreamEnd: fn
+}) {
+  const tmp1 = new StringDecoder("utf8");
+  let sseBuffer = "";
+  let tmp26 = false;
+  let tmp32 = null;
+  tmp24.startHeartbeat();
+  const fn2 = () => {
+    if (tmp32) {
+      clearTimeout(tmp32);
+      tmp32 = null;
+    }
+  };
+  const fn3 = () => {
+    fn2();
+    tmp32 = setTimeout(() => {
+      if (tmp26 || tmp24.wasClosedByClient()) {
+        return;
+      }
+      console.error("  ❌ OpenAI stream stalled after " + OPENAI_SSE_IDLE_TIMEOUT_MS + "ms without data");
+      fn("stream idle timeout " + OPENAI_SSE_IDLE_TIMEOUT_MS + "ms");
+      tmp24.fail("[OpenAI Stream Timeout]");
+      arg02.destroy();
+    }, OPENAI_SSE_IDLE_TIMEOUT_MS);
+  };
+  function processPart(arg03) {
+    const tmp110 = parseOpenAISSEChunk(arg03 + "\n");
+    for (const tmp02 of tmp110) {
+      const tmp03 = tmp13.processEvent(tmp02);
+      for (const tmp04 of tmp03) {
+        tmp24.safeWrite(wrapEnvelope(tmp04));
+      }
+    }
+    if (tmp13.isDone) {
+      tmp26 = true;
+      fn2();
+      tmp24.finalize("  ✅ OpenAI stream done (stop: " + tmp13.stopReason + ")");
+    }
+  }
+  fn3();
+  arg02.on("data", arg03 => {
+    if (tmp10) {
+      tmp10.mark("first_upstream_chunk", "bytes=" + Buffer.byteLength(arg03));
+    }
+    fn3();
+    sseBuffer += tmp1.write(arg03);
+    const tmp110 = sseBuffer.split("\n\n");
+    sseBuffer = tmp110.pop();
+    for (const tmp02 of tmp110) {
+      processPart(tmp02);
+    }
+  });
+  arg02.on("end", () => {
+    tmp26 = true;
+    fn2();
+    sseBuffer += tmp1.end();
+    if (sseBuffer.trim()) {
+      processPart(sseBuffer);
+    }
+    if (!tmp13.isDone && tmp11 && !tmp11.writableEnded) {
+      console.log("  ⚠️  OpenAI stream ended without terminal event — forcing stop");
+      const tmp02 = tmp13.processEvent({
+        done: true,
+        type: "done",
+        data: null
+      });
+      for (const tmp03 of tmp02) {
+        tmp24.safeWrite(wrapEnvelope(tmp03));
+      }
+    }
+    tmp24.finalize("  ✅ OpenAI stream ended (stop: " + tmp13.stopReason + ")");
+  });
+  arg02.on("aborted", () => {
+    tmp26 = true;
+    fn2();
+    if (tmp24.wasClosedByClient()) {
+      return;
+    }
+    console.error("  ❌ OpenAI stream aborted before completion");
+    fn("stream aborted before completion");
+    tmp24.fail("[Stream Aborted]");
+  });
+  arg02.on("error", arg03 => {
+    tmp26 = true;
+    fn2();
+    if (tmp24.wasClosedByClient()) {
+      return;
+    }
+    console.error("  ❌ OpenAI stream error: " + arg03.message);
+    fn("stream error: " + arg03.message);
+    tmp24.fail("[Stream Error]");
+  });
+}
 function streamAnthropic(arg0, arg1, {
   systemPrompt: tmp2,
   messages: tmp3,
@@ -685,82 +958,109 @@ function streamOpenAI(arg0, arg1, {
   byokSlot: tmp13 = null
 }) {
   const tmp14 = getProviderConfig(tmp13).openai;
-  const tmp15 = toOpenAIMessages(tmp2, tmp3);
   const tmp16 = shouldForwardOpenAITools(tmp9, tmp4);
-  const tmp17 = tmp16 ? getForwardedToolChoice(tmp4, tmp5, "OpenAI") : undefined;
-  const tmp18 = {
-    model: tmp6,
-    input: tmp15,
-    stream: true
+  const tmp30 = {
+    systemPrompt: tmp2,
+    messages: tmp3,
+    tools: tmp4,
+    toolChoice: tmp5,
+    resolvedModel: tmp6,
+    serviceTier: tmp7,
+    thinkingOptions: tmp12,
+    initiator: tmp9,
+    forwardTools: tmp16
   };
-  const tmp19 = tmp18;
-  const tmp20 = getMaxTokens();
-  if (tmp20 > 0) {
-    tmp19.max_output_tokens = tmp20;
-  }
-  const tmp21 = tmp12?.thinkingEnabled === true;
-  if (OPENAI_ENABLE_REASONING && tmp21) {
-    if (isGeminiModel(tmp6)) {
-      const tmp02 = buildGeminiThinkingPayload(tmp6, tmp12?.reasoningEffort);
-      if (tmp02?.thinkingConfig) {
-        const tmp03 = {};
-        if (tmp02.thinkingConfig.thinking_level) {
-          tmp03.thinking_level = tmp02.thinkingConfig.thinking_level;
-        } else if (tmp02.thinkingConfig.thinking_budget) {
-          tmp03.thinking_budget = tmp02.thinkingConfig.thinking_budget;
-        }
-        tmp19.thinking_config = tmp03;
-        tmp19.extra_body = {
-          ...(tmp19.extra_body || {}),
-          thinking_config: tmp03
-        };
-      }
-    } else {
-      const tmp02 = {
-        summary: OPENAI_REASONING_SUMMARY
-      };
-      tmp19.reasoning = tmp02;
-      if (tmp12?.reasoningEffort) {
-        tmp19.reasoning.effort = thinkingEffortToOpenAIReasoningEffort(tmp12.reasoningEffort);
-      }
-    }
-  }
-  console.log("  🧩 OpenAI/Sub2API reasoning: " + (isGeminiModel(tmp6) ? tmp19.thinking_config ? usesGeminiThinkingLevel(tmp6) ? "gemini level=" + (tmp19.thinking_config.thinking_level || "?") : "gemini budget=" + (tmp19.thinking_config.thinking_budget || "?") : "off" : tmp19.reasoning ? tmp19.reasoning.effort || "default" : "off"));
-  if (tmp7) {
-    tmp19.service_tier = tmp7;
-  }
-  if (tmp16) {
-    tmp19.tools = tmp4.map(arg02 => ({
-      type: "function",
-      name: arg02.name,
-      description: arg02.description || "",
-      parameters: typeof arg02.input_schema === "string" ? JSON.parse(arg02.input_schema) : arg02.input_schema
-    }));
-    if (tmp17) {
-      if (tmp17.type === "auto") {
-        tmp19.tool_choice = "auto";
-      } else if (tmp17.type === "any") {
-        tmp19.tool_choice = "required";
-      } else if (tmp17.type === "tool") {
-        tmp19.tool_choice = {
-          type: "function",
-          name: tmp17.name
-        };
-      }
-    }
+  const tmp31 = buildOpenAIResponsesBody(tmp30);
+  const tmp32 = buildOpenAIChatCompletionsBody(tmp30);
+  const tmp36 = isGeminiModel(tmp6) && tmp12?.thinkingEnabled === true ? buildOpenAIChatCompletionsBody({
+    ...tmp30,
+    omitGeminiThinking: true
+  }) : null;
+  console.log("  🧩 OpenAI/Sub2API reasoning: " + (isGeminiModel(tmp6) ? tmp31.thinking_config ? usesGeminiThinkingLevel(tmp6) ? "gemini level=" + (tmp31.thinking_config.thinking_level || "?") : "gemini budget=" + (tmp31.thinking_config.thinking_budget || "?") : "off" : tmp31.reasoning ? tmp31.reasoning.effort || "default" : tmp32.reasoning_effort || "off"));
+  if (tmp16 && tmp4 && tmp4.length > 0) {
     console.log("  🔧 OpenAI tools enabled: " + tmp4.length + " (initiator=" + (tmp9 || "unknown") + ")\n    → [" + tmp4.map(arg02 => arg02.name).join(", ") + "]");
   } else if (tmp4 && tmp4.length > 0) {
     console.log("  🔧 OpenAI tools disabled for user-initiated turn: " + tmp4.length + " available");
   }
-  const tmp22 = JSON.stringify(tmp19);
-  arg1.writeHead(200, streamHeaders());
-  const processor = new OpenAIStreamProcessor(tmp8, tmp6, tmp11);
-  if (tmp16 && tmp4) {
-    processor.setAllowedTools(tmp4.map(arg02 => arg02.name));
+  const tmp33 = [];
+  const tmp37 = tmp14.useHttp ? "http" : "https";
+  const tmp38 = tmp14.parsed.port !== 443 ? tmp14.parsed.port : tmp14.useHttp ? 80 : 443;
+  const tmp39 = buildGatewayCapabilityKey({
+    protocol: tmp37,
+    host: tmp14.parsed.hostname,
+    port: tmp38,
+    apiPath: tmp14.apiPath || "/v1/responses",
+    providerKind: isGeminiModel(tmp6) ? "gemini" : "openai",
+    slot: tmp13 || "default"
+  });
+  const tmp40 = getGatewayCapability(tmp39);
+  if (isResponsesApiPath(tmp14.apiPath) && tmp40?.preferChatCompletions) {
+    console.log("  ↩️  using cached chat-completions for " + tmp14.parsed.hostname + " (" + (tmp40.reason || "responses unsupported") + ")");
+    tmp33.push({
+      path: toChatCompletionsPath(tmp14.apiPath),
+      body: tmp32,
+      mode: "chat",
+      cacheKey: tmp39
+    });
+    if (tmp36) {
+      tmp33.push({
+        path: toChatCompletionsPath(tmp14.apiPath),
+        body: tmp36,
+        mode: "chat",
+        withoutGeminiThinking: true,
+        cacheKey: tmp39
+      });
+    }
+  } else if (isResponsesApiPath(tmp14.apiPath)) {
+    tmp33.push({
+      path: tmp14.apiPath,
+      body: tmp31,
+      mode: "responses",
+      cacheKey: tmp39
+    });
+    tmp33.push({
+      path: toChatCompletionsPath(tmp14.apiPath),
+      body: tmp32,
+      mode: "chat",
+      cacheKey: tmp39
+    });
+    if (tmp36) {
+      tmp33.push({
+        path: toChatCompletionsPath(tmp14.apiPath),
+        body: tmp36,
+        mode: "chat",
+        withoutGeminiThinking: true,
+        cacheKey: tmp39
+      });
+    }
+  } else {
+    markGatewayCapability(tmp39, {
+      preferChatCompletions: true,
+      reason: "configured chat-completions path"
+    });
+    tmp33.push({
+      path: tmp14.apiPath || "/v1/chat/completions",
+      body: tmp32,
+      mode: "chat",
+      cacheKey: tmp39
+    });
+    if (tmp36) {
+      tmp33.push({
+        path: tmp14.apiPath || "/v1/chat/completions",
+        body: tmp36,
+        mode: "chat",
+        withoutGeminiThinking: true,
+        cacheKey: tmp39
+      });
+    }
   }
+  arg1.writeHead(200, streamHeaders());
   let tmp23;
+  let processor;
   const tmp24 = createStreamLifecycle(arg1, () => tmp23, "OpenAI", tmp8, tmp10);
   let tmp25 = false;
+  let tmp34 = 0;
+  let tmp35 = "";
   const fn = arg02 => {
     if (tmp25) {
       return;
@@ -769,157 +1069,103 @@ function streamOpenAI(arg0, arg1, {
     logNoToolsCalled("OpenAI", arg02, tmp16 ? tmp4 : []);
   };
   const tmp27 = tmp14.useHttp ? http : https;
-  const tmp28 = tmp14.parsed.port !== 443 ? tmp14.parsed.port : tmp14.useHttp ? 80 : 443;
+  const tmp28 = tmp38;
   const tmp29 = tmp14.apiKey ? tmp14.apiKey.slice(0, 6) + "..." + tmp14.apiKey.slice(-4) : "empty";
-  console.log("  → OpenAI " + (tmp14.useHttp ? "http" : "https") + "://" + tmp14.parsed.hostname + ":" + tmp28 + tmp14.apiPath + " model=" + tmp6 + " key=" + tmp29);
-  if (tmp10) {
-    tmp10.mark("upstream_request_start", "bytes=" + Buffer.byteLength(tmp22) + " tools=" + (tmp16 && tmp4 ? tmp4.length : 0));
-  }
-  tmp23 = tmp27.request({
-    hostname: tmp14.parsed.hostname,
-    port: tmp28,
-    path: tmp14.apiPath,
-    method: "POST",
-    agent: tmp14.useHttp ? undefined : keepAliveAgent,
-    rejectUnauthorized: !tmp14.useHttp && tmp14.parsed.port === 443,
-    headers: {
-      "content-type": "application/json",
-      accept: "text/event-stream",
-      authorization: "Bearer " + tmp14.apiKey,
-      "content-length": Buffer.byteLength(tmp22),
-      ...proxyHeaders(tmp6, Buffer.byteLength(tmp22))
+  const fn2 = () => {
+    const tmp02 = tmp33[tmp34++];
+    if (!tmp02) {
+      tmp24.fail(tmp35 || "[OpenAI Error]");
+      return;
     }
-  }, arg02 => {
+    if (tmp02.mode === "chat" && tmp33.length > 1 && tmp34 > 1) {
+      console.log("  ↩️  OpenAI gateway rejected /v1/responses — falling back to /v1/chat/completions");
+    }
+    processor = tmp02.mode === "chat" ? new ChatCompletionsStreamProcessor(tmp8, tmp6, tmp11) : new OpenAIStreamProcessor(tmp8, tmp6, tmp11);
+    if (tmp16 && tmp4) {
+      processor.setAllowedTools(tmp4.map(arg02 => arg02.name));
+    }
+    const tmp03 = JSON.stringify(tmp02.body);
+    console.log("  → OpenAI " + (tmp14.useHttp ? "http" : "https") + "://" + tmp14.parsed.hostname + ":" + tmp28 + tmp02.path + " model=" + tmp6 + " key=" + tmp29);
     if (tmp10) {
-      tmp10.mark("upstream_headers", "status=" + arg02.statusCode);
+      tmp10.mark(tmp34 === 1 ? "upstream_request_start" : "upstream_fallback_start", "bytes=" + Buffer.byteLength(tmp03) + " tools=" + (tmp16 && tmp4 ? tmp4.length : 0));
     }
-    let sseBuffer = "";
-    if (arg02.statusCode !== 200) {
-      fn("HTTP " + arg02.statusCode + " before stream");
-      console.error("  ❌ OpenAI API returned " + arg02.statusCode);
-      let tmp02 = "";
-      arg02.setEncoding("utf8");
-      arg02.on("data", arg03 => tmp02 += arg03);
-      arg02.on("end", () => {
-        console.error("  ❌ Body: " + sanitizeLogBody(tmp02));
-        const tmp03 = buildProviderErrorMessage("OpenAI", arg02.statusCode, tmp02);
-        tmp24.fail(tmp03);
-      });
-      return;
-    }
-    tmp23.setTimeout(0);
-    const tmp1 = new StringDecoder("utf8");
-    let tmp26 = false;
-    let tmp32 = null;
-    tmp24.startHeartbeat();
-    const fn2 = () => {
-      if (tmp32) {
-        clearTimeout(tmp32);
-        tmp32 = null;
+    tmp23 = tmp27.request({
+      hostname: tmp14.parsed.hostname,
+      port: tmp28,
+      path: tmp02.path,
+      method: "POST",
+      agent: tmp14.useHttp ? undefined : keepAliveAgent,
+      rejectUnauthorized: !tmp14.useHttp && tmp14.parsed.port === 443,
+      headers: {
+        "content-type": "application/json",
+        accept: "text/event-stream",
+        authorization: "Bearer " + tmp14.apiKey,
+        "content-length": Buffer.byteLength(tmp03),
+        ...proxyHeaders(tmp6, Buffer.byteLength(tmp03))
       }
-    };
-    const fn3 = () => {
-      fn2();
-      tmp32 = setTimeout(() => {
-        if (tmp26 || tmp24.wasClosedByClient()) {
-          return;
-        }
-        console.error("  ❌ OpenAI stream stalled after " + OPENAI_SSE_IDLE_TIMEOUT_MS + "ms without data");
-        fn("stream idle timeout " + OPENAI_SSE_IDLE_TIMEOUT_MS + "ms");
-        tmp24.fail("[OpenAI Stream Timeout]");
-        arg02.destroy();
-      }, OPENAI_SSE_IDLE_TIMEOUT_MS);
-    };
-    function processPart(arg03) {
-      const tmp110 = parseOpenAISSEChunk(arg03 + "\n");
-      for (const tmp02 of tmp110) {
-        const tmp03 = processor.processEvent(tmp02);
-        for (const tmp04 of tmp03) {
-          tmp24.safeWrite(wrapEnvelope(tmp04));
-        }
-      }
-      if (processor.isDone) {
-        tmp26 = true;
-        fn2();
-        tmp24.finalize("  ✅ OpenAI stream done (stop: " + processor.stopReason + ")");
-      }
-    }
-    fn3();
-    arg02.on("data", arg03 => {
+    }, arg02 => {
       if (tmp10) {
-        tmp10.mark("first_upstream_chunk", "bytes=" + Buffer.byteLength(arg03));
+        tmp10.mark(tmp34 === 1 ? "upstream_headers" : "upstream_fallback_headers", "status=" + arg02.statusCode + " path=" + tmp02.path);
       }
-      fn3();
-      sseBuffer += tmp1.write(arg03);
-      const tmp110 = sseBuffer.split("\n\n");
-      sseBuffer = tmp110.pop();
-      for (const tmp02 of tmp110) {
-        processPart(tmp02);
-      }
-    });
-    arg02.on("end", () => {
-      tmp26 = true;
-      fn2();
-      sseBuffer += tmp1.end();
-      if (sseBuffer.trim()) {
-        processPart(sseBuffer);
-      }
-      if (!processor.isDone && !arg1.writableEnded) {
-        console.log("  ⚠️  OpenAI stream ended without response.completed — forcing stop");
-        const tmp02 = processor.processEvent({
-          done: true,
-          type: "done",
-          data: null
+      if (arg02.statusCode !== 200) {
+        fn("HTTP " + arg02.statusCode + " before stream");
+        console.error("  ❌ OpenAI API returned " + arg02.statusCode + " (" + tmp02.path + ")");
+        let tmp12 = "";
+        arg02.setEncoding("utf8");
+        arg02.on("data", arg03 => tmp12 += arg03);
+        arg02.on("end", () => {
+          console.error("  ❌ Body: " + sanitizeLogBody(tmp12));
+          tmp35 = buildProviderErrorMessage("OpenAI", arg02.statusCode, tmp12);
+          if (shouldFallbackToChatCompletions(arg02.statusCode, tmp12) && tmp34 < tmp33.length) {
+            markGatewayCapability(tmp02.cacheKey, {
+              preferChatCompletions: true,
+              reason: "responses rejected: HTTP " + arg02.statusCode
+            });
+            fn2();
+            return;
+          }
+          if (tmp02.mode === "chat" && !tmp02.withoutGeminiThinking && tmp36 && shouldRetryWithoutGeminiThinking(arg02.statusCode, tmp12) && tmp34 < tmp33.length) {
+            console.log("  ↩️  OpenAI-compatible gateway rejected Gemini thinking fields — retrying chat/completions without thinking_config");
+            fn2();
+            return;
+          }
+          tmp24.fail(tmp35);
         });
-        for (const tmp03 of tmp02) {
-          tmp24.safeWrite(wrapEnvelope(tmp03));
-        }
+        return;
       }
-      tmp24.finalize("  ✅ OpenAI stream ended (stop: " + processor.stopReason + ")");
+      tmp23.setTimeout(0);
+      attachOpenAISseStream(arg02, {
+        processor,
+        lifecycle: tmp24,
+        timing: tmp10,
+        clientResponse: arg1,
+        onStreamEnd: fn
+      });
     });
-    arg02.on("aborted", () => {
-      tmp26 = true;
-      fn2();
+    tmp23.setTimeout(OPENAI_REQUEST_TIMEOUT_MS, () => {
       if (tmp24.wasClosedByClient()) {
         return;
       }
-      console.error("  ❌ OpenAI stream aborted before completion");
-      fn("stream aborted before completion");
-      tmp24.fail("[Stream Aborted]");
+      console.error("  ❌ OpenAI request timeout after " + OPENAI_REQUEST_TIMEOUT_MS + "ms");
+      fn("request timeout " + OPENAI_REQUEST_TIMEOUT_MS + "ms");
+      tmp24.fail("[OpenAI Request Timeout]");
+      tmp23.destroy();
     });
-    arg02.on("error", arg03 => {
-      tmp26 = true;
-      fn2();
-      if (tmp24.wasClosedByClient()) {
+    tmp23.on("error", arg03 => {
+      if (tmp24.wasClosedByClient() && (arg03.code === "ECONNRESET" || arg03.code === "ECONNABORTED")) {
         return;
       }
-      console.error("  ❌ OpenAI stream error: " + arg03.message);
-      fn("stream error: " + arg03.message);
-      tmp24.fail("[Stream Error]");
+      const tmp12 = describeNetworkError(arg03, tmp14.host, tmp14.parsed.port);
+      console.error("  ❌ OpenAI request error: " + tmp12);
+      fn("request error: " + (arg03.message || arg03.code || "unknown"));
+      tmp24.fail("[OpenAI Connection Error] " + tmp12);
     });
-  });
-  tmp23.setTimeout(OPENAI_REQUEST_TIMEOUT_MS, () => {
-    if (tmp24.wasClosedByClient()) {
-      return;
+    tmp23.end(tmp03);
+    if (tmp10 && tmp34 === 1) {
+      tmp10.mark("upstream_request_sent");
     }
-    console.error("  ❌ OpenAI request timeout after " + OPENAI_REQUEST_TIMEOUT_MS + "ms");
-    fn("request timeout " + OPENAI_REQUEST_TIMEOUT_MS + "ms");
-    tmp24.fail("[OpenAI Request Timeout]");
-    tmp23.destroy();
-  });
-  tmp23.on("error", arg02 => {
-    if (tmp24.wasClosedByClient() && (arg02.code === "ECONNRESET" || arg02.code === "ECONNABORTED")) {
-      return;
-    }
-    const tmp1 = describeNetworkError(arg02, tmp14.host, tmp14.parsed.port);
-    console.error("  ❌ OpenAI request error: " + tmp1);
-    fn("request error: " + (arg02.message || arg02.code || "unknown"));
-    tmp24.fail("[OpenAI Connection Error] " + tmp1);
-  });
-  tmp23.end(tmp22);
-  if (tmp10) {
-    tmp10.mark("upstream_request_sent");
-  }
+  };
+  fn2();
 }
 function toOpenAIMessages(arg0, arg1) {
   const tmp2 = [];

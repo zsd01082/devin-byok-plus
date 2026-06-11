@@ -8,6 +8,8 @@ const SYSTEM_PROMPT_PATH = process.env.SYSTEM_PROMPT_PATH || "";
 const DEBUG_UNKNOWN_FIELDS = process.env.DEBUG_UNKNOWN_FIELDS === "1";
 const DEBUG_EXPORT_SYSTEM_PROMPT = process.env.DEBUG_EXPORT_SYSTEM_PROMPT === "1";
 const DEBUG_SYSTEM_PROMPT_DUMP_PATH = process.env.DEBUG_SYSTEM_PROMPT_DUMP_PATH || "./debug/original-system-prompt.txt";
+const STRIP_UNSIGNED_THINKING = process.env.STRIP_UNSIGNED_THINKING !== "false";
+let _warnedUnsignedThinking = false;
 let _promptCache = {
   content: "",
   mtime: 0,
@@ -212,6 +214,12 @@ function parseChatToolChoice(arg0) {
   }
   return undefined;
 }
+function warnUnsignedThinkingStripped() {
+  if (!_warnedUnsignedThinking) {
+    _warnedUnsignedThinking = true;
+    console.warn("  ⚠️  Stripped unsigned Claude thinking block before forwarding. Set STRIP_UNSIGNED_THINKING=false to preserve it.");
+  }
+}
 function toAnthropicMessage(arg0) {
   const {
     source: tmp1,
@@ -279,15 +287,19 @@ function toAnthropicMessage(arg0) {
   if (tmp1 === SOURCE.UNKNOWN || tmp1 === SOURCE.SYSTEM) {
     const tmp0 = [];
     if (tmp7) {
-      const tmp02 = {
-        type: "thinking",
-        thinking: tmp7
-      };
-      const tmp13 = tmp02;
-      if (tmp8) {
-        tmp13.signature = tmp8;
+      if (tmp8 || !STRIP_UNSIGNED_THINKING) {
+        const tmp02 = {
+          type: "thinking",
+          thinking: tmp7
+        };
+        const tmp13 = tmp02;
+        if (tmp8) {
+          tmp13.signature = tmp8;
+        }
+        tmp0.push(tmp13);
+      } else {
+        warnUnsignedThinkingStripped();
       }
-      tmp0.push(tmp13);
     }
     if (tmp2) {
       const tmp02 = {
@@ -326,6 +338,51 @@ function toAnthropicMessage(arg0) {
   }
   return null;
 }
+function sanitizeAnthropicMessages(arg0) {
+  if (!STRIP_UNSIGNED_THINKING) {
+    return arg0;
+  }
+  let tmp1 = 0;
+  const tmp2 = [];
+  for (const tmp0 of arg0 || []) {
+    if (!tmp0 || !Array.isArray(tmp0.content)) {
+      tmp2.push(tmp0);
+      continue;
+    }
+    const tmp02 = tmp0.content.filter(arg02 => {
+      const tmp12 = arg02?.type === "thinking" && arg02.thinking && !arg02.signature;
+      if (tmp12) {
+        tmp1++;
+      }
+      return !tmp12;
+    });
+    if (tmp02.length === 0) {
+      if (tmp0.role === "assistant") {
+        continue;
+      }
+      tmp2.push({
+        ...tmp0,
+        content: ""
+      });
+      continue;
+    }
+    if (tmp02.length === 1 && tmp02[0].type === "text") {
+      tmp2.push({
+        ...tmp0,
+        content: tmp02[0].text
+      });
+    } else {
+      tmp2.push({
+        ...tmp0,
+        content: tmp02
+      });
+    }
+  }
+  if (tmp1 > 0) {
+    warnUnsignedThinkingStripped();
+  }
+  return tmp2;
+}
 function normalizeContent(arg0) {
   if (typeof arg0 === "string") {
     const tmp0 = {
@@ -363,7 +420,7 @@ function mergeConsecutiveMessages(arg0) {
   }
   return tmp1;
 }
-export { extractFunctionalSections, compactPromptText };
+export { extractFunctionalSections, compactPromptText, sanitizeAnthropicMessages };
 export function parseGetChatMessageRequest(arg0, arg1) {
   const tmp2 = unwrapRequest(arg0, arg1);
   const tmp3 = parseFields(tmp2);
@@ -421,7 +478,7 @@ export function parseGetChatMessageRequest(arg0, arg1) {
       }
     }
   }
-  const tmp14 = mergeConsecutiveMessages(tmp11.map(toAnthropicMessage).filter(Boolean));
+  const tmp14 = sanitizeAnthropicMessages(mergeConsecutiveMessages(tmp11.map(toAnthropicMessage).filter(Boolean)));
   const tmp15 = getAllFields(tmp3, 10, 2);
   let tmp16 = tmp15.map(arg02 => parseChatToolDefinition(arg02.value)).filter(arg02 => arg02.name);
   if (tmp16.length > 0) {
