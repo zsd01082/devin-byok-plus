@@ -288,14 +288,14 @@ export function handleGetChatMessage(arg0, arg1, arg2) {
 
   // ✅ 提前验证模型配置
   if (requiresConfiguredDefaultModel(tmp7)) {
-    let tmp02 = “Default model not configured. Please set DEFAULT_MODEL or BYOK1_MODEL in .env.”;
+    let tmp02 = "Default model not configured. Please set DEFAULT_MODEL or BYOK1_MODEL in .env.";
     if (tmp10 === 2) {
-      tmp02 = “BYOK #2 model not configured. Please set BYOK2_MODEL in .env or configure via sidebar.”;
+      tmp02 = "BYOK #2 model not configured. Please set BYOK2_MODEL in .env or configure via sidebar.";
     } else if (tmp10 === 1) {
-      tmp02 = “BYOK #1 model not configured. Please set BYOK1_MODEL or DEFAULT_MODEL in .env.”;
+      tmp02 = "BYOK #1 model not configured. Please set BYOK1_MODEL or DEFAULT_MODEL in .env.";
     }
 
-    console.error(“  ❌ Model validation failed: “ + (tmp7 || “unknown”) + “ - “ + tmp02);
+    console.error("  ❌ Model validation failed: " + (tmp7 || "unknown") + " - " + tmp02);
     writeModelConfigError(arg1, tmp9, tmp02);
     return;
   }
