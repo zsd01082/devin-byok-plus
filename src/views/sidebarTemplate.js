@@ -142,6 +142,9 @@ function renderSidebarHtml(ctx) {
                 <button type="button" class="btn btn-s sm" data-ws-action="openSystemPrompt" style="padding:4px 8px">自定义</button>
             </div>
         </div>
+        <div class="btns" style="margin-top:12px;padding-top:12px;border-top:1px solid ${tmp21}">
+            <button type="button" class="btn btn-p" data-ws-action="saveConfig">💾 保存配置</button>
+        </div>
     </div>
 
     <!-- TAB 2: Control -->
