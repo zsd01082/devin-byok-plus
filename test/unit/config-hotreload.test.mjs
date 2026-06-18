@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleConfigRequest, setRuntimeConfig } from "../../proxy-scripts/src/handlers/models.js";
+import { handleConfigRequest, setRuntimeConfig } from "../../src/proxy/handlers/models.js";
 
 test("handleConfigRequest applies POST body when hybrid passes buffered body", async () => {
   // 重置配置

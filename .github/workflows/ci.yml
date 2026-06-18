@@ -81,6 +81,9 @@ jobs:
       - name: 安装依赖
         run: pnpm install
 
+      - name: 构建项目
+        run: NODE_ENV=production pnpm run build
+
       - name: 运行测试
         run: pnpm test
 

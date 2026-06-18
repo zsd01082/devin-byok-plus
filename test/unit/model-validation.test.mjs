@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { requiresConfiguredDefaultModel } from "../../proxy-scripts/src/handlers/chat.js";
-import { setRuntimeConfig } from "../../proxy-scripts/src/handlers/models.js";
+import { requiresConfiguredDefaultModel } from "../../src/proxy/handlers/chat.js";
+import { setRuntimeConfig } from "../../src/proxy/handlers/models.js";
 
 test("requiresConfiguredDefaultModel blocks __DEFAULT__ models when not configured", () => {
   setRuntimeConfig({
