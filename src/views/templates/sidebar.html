@@ -13,9 +13,9 @@
 
 <!-- 全局状态栏 -->
 <div class="global-status-bar" id="globalStatusBar">
-    <div class="flex items-center justify-between">
-        <!-- 左侧：状态信息 -->
-        <div class="flex items-center gap-4">
+    <div class="flex items-center justify-between gap-2">
+        <!-- 左侧：状态信息（窄屏自动换行） -->
+        <div class="flex items-center flex-wrap gap-x-3 gap-y-1 min-w-0">
             <div class="status-indicator">
                 <span class="status-dot {{statusDotClass}}"></span>
                 <span class="font-bold">{{statusText}}</span>
@@ -24,7 +24,7 @@
         </div>
 
         <!-- 右侧：快速操作 -->
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-shrink-0">
             {{statusBarButton}}
         </div>
     </div>

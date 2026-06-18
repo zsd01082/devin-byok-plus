@@ -638,8 +638,8 @@
 
       // 重新渲染整个状态栏（简化版）
       const statusHtml = `
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-4">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center flex-wrap gap-x-3 gap-y-1 min-w-0">
             <div class="status-indicator">
               <span class="status-dot ${arg0.running ? 'running' : 'stopped'}"></span>
               <span class="font-bold">${arg0.running ? '运行中' : '已停止'}</span>
@@ -659,7 +659,7 @@
               </span>
             ` : ''}
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-shrink-0">
             ${arg0.running ? `
               <button type="button" class="btn btn-d"
                       data-ws-action="stopProxy"
@@ -820,9 +820,9 @@
       navigator.clipboard.writeText(tmp13).then(() => {
         const tmp03 = fn4("copyToast");
         if (tmp03) {
-          tmp03.style.display = "block";
+          tmp03.classList.remove("hidden");
           setTimeout(() => {
-            tmp03.style.display = "none";
+            tmp03.classList.add("hidden");
           }, 2000);
         }
       });

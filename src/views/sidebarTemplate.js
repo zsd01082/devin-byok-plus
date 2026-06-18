@@ -21,6 +21,11 @@ function renderSidebarHtml(ctx) {
     tmp25, tmp26, tmp27, tmp28, tmp29, tmp30, tmp31, tmp32, tmp33, tmp34, tmp35, tmp36,
   } = ctx;
 
+  // BYOK 卡片折叠/状态：#1 主槽位始终展开；#2 可选槽位未配置时折叠
+  const byok1Configured = !!(tmp25 || tmp26);
+  const byok2Configured = !!(tmp28 || tmp29);
+  const byok2Collapsed = !byok2Configured;
+
   // 准备模板数据
   const templateData = {
     // CSP 和资源
@@ -71,6 +76,11 @@ function renderSidebarHtml(ctx) {
     byok1ModelOption: tmp27 ? `<option value="${esc(tmp27)}" selected>${esc(tmp27)}</option>` : '<option value="" disabled selected>请先加载模型</option>',
     byok1ThinkingLabel: esc(thinkingEffort.getThinkingIntensityHint(thinkingEffort.detectModelProvider(tmp27))),
     byok1ThinkingOptions: thinkingEffort.buildThinkingEffortOptionsHtml(tmp27, tmp31),
+    // BYOK #1 卡片状态（主槽位始终展开）
+    byok1HeadCollapsed: '',
+    byok1BodyHidden: '',
+    byok1BadgeClass: byok1Configured ? 'badge-ok' : 'badge-warn',
+    byok1BadgeText: byok1Configured ? '已配置' : '未配置',
 
     // BYOK #2 配置数据
     byok2Host: esc(tmp28),
@@ -78,6 +88,11 @@ function renderSidebarHtml(ctx) {
     byok2ModelOption: tmp30 ? `<option value="${esc(tmp30)}" selected>${esc(tmp30)}</option>` : '<option value="" disabled selected>请先加载模型</option>',
     byok2ThinkingLabel: esc(thinkingEffort.getThinkingIntensityHint(thinkingEffort.detectModelProvider(tmp30))),
     byok2ThinkingOptions: thinkingEffort.buildThinkingEffortOptionsHtml(tmp30, tmp32),
+    // BYOK #2 卡片状态（可选槽位未配置时折叠）
+    byok2HeadCollapsed: byok2Collapsed ? 'collapsed' : '',
+    byok2BodyHidden: byok2Collapsed ? 'hidden' : '',
+    byok2BadgeClass: byok2Configured ? 'badge-ok' : 'badge-warn',
+    byok2BadgeText: byok2Configured ? '已配置' : '未配置',
 
     // 提示词状态
     promptStatus: tmp9 ? '已启用 · ' + esc(tmp8) : '未启用 · 使用 Devin Desktop 原始提示词',
