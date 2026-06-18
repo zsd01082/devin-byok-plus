@@ -2,6 +2,7 @@
 
 <!-- 流程可视化指示器 -->
 <div class="flow-indicator">
+    <div class="flow-card-title">配置流程</div>
     <div class="flow-steps">
         <!-- 步骤 1：配置 -->
         <div class="flow-step">
@@ -44,31 +45,35 @@
     </div>
 </div>
 
-<!-- 端口配置 -->
-<div class="row" style="gap:6px;margin-bottom:12px">
-    <div class="fg" style="flex:1;margin-bottom:0">
-        <label>Hybrid 端口</label>
-        <input type="number" id="cfgHybridPort" value="{{hybridPort}}" placeholder="3006" min="1" max="65535">
+<!-- 代理控制卡片 -->
+<div class="card" style="margin-bottom:12px">
+    <div class="card-head">代理控制</div>
+    <!-- 端口配置 -->
+    <div style="margin-bottom:10px">
+        <div class="fg">
+            <label>Hybrid 端口</label>
+            <input type="number" id="cfgHybridPort" value="{{hybridPort}}" placeholder="3006" min="1" max="65535">
+        </div>
+        <div class="fg" style="margin-bottom:0">
+            <label>Inference 端口</label>
+            <input type="number" id="cfgInferencePort" value="{{inferencePort}}" placeholder="3001" min="1" max="65535">
+        </div>
     </div>
-    <div class="fg" style="flex:1;margin-bottom:0">
-        <label>Inference 端口</label>
-        <input type="number" id="cfgInferencePort" value="{{inferencePort}}" placeholder="3001" min="1" max="65535">
-    </div>
-</div>
 
-<!-- 控制按钮 -->
-<div class="btns" style="margin-bottom:12px" id="proxyControlButtons">
-    {{proxyControlButtons}}
-    <button type="button" class="btn btn-s sm" data-ws-action="maintenanceTools">维护工具</button>
-</div>
-
-<!-- 自动启动 + 新窗口 -->
-<div class="row between" style="margin-bottom:12px;padding:4px 0">
-    <div class="row">
-        <span style="font-size:11px;color:{{inputFgColor}}">自动启动</span>
-        <label class="tog"><input type="checkbox" id="cfgAutoStartProxy" {{autoStartChecked}}><span></span></label>
+    <!-- 控制按钮 -->
+    <div class="btns" style="margin-bottom:10px" id="proxyControlButtons">
+        {{proxyControlButtons}}
+        <button type="button" class="btn btn-s sm" data-ws-action="maintenanceTools">维护工具</button>
     </div>
-    <button type="button" class="btn btn-s sm" data-ws-action="newWindow" style="font-size:10px;padding:3px 8px">新窗口</button>
+
+    <!-- 自动启动 + 新窗口 -->
+    <div class="row between" style="padding:2px 0">
+        <div class="row">
+            <span style="font-size:11px;color:{{inputFgColor}}">自动启动</span>
+            <label class="tog"><input type="checkbox" id="cfgAutoStartProxy" {{autoStartChecked}}><span></span></label>
+        </div>
+        <button type="button" class="btn btn-s sm" data-ws-action="newWindow" style="font-size:10px;padding:3px 8px">新窗口</button>
+    </div>
 </div>
 
 <!-- 运行状态统计卡 -->
@@ -93,6 +98,6 @@
     </div>
     <div id="logBody">
         <div class="log-box" id="logBox" style="max-height:300px">{{logContent}}</div>
-        <div id="copyToast" style="display:none;text-align:center;color:#34d399;font-size:10px;margin-top:4px">已复制</div>
+        <div id="copyToast" class="copy-toast hidden">已复制</div>
     </div>
 </div>

@@ -30,7 +30,7 @@
   /* ========== 卡片组件 ========== */
   .card {
     @apply bg-vswidget rounded-lg p-3 mb-3 border border-vsborder;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.02);
     @apply transition-all duration-200;
   }
   .card:hover {
@@ -50,7 +50,7 @@
     @apply bg-vsinput rounded-md px-1 py-2 text-center border border-vsborder transition-colors;
   }
   .st:hover {
-    @apply border-[rgba(94,234,212,0.2)];
+    border-color: color-mix(in srgb, var(--vscode-button-background, #0d9488) 25%, var(--vscode-panel-border));
   }
   .st b {
     @apply block text-sm font-bold text-vslink leading-tight font-mono;
@@ -72,11 +72,11 @@
   }
 
   .btn-p {
-    background: linear-gradient(135deg, #0d9488, #0ea5e9);
+    background: var(--vscode-button-background, #0d9488);
     @apply text-white border border-white/10;
   }
   .btn-p:hover {
-    background: linear-gradient(135deg, #0f766e, #0284c7);
+    background: var(--vscode-button-hoverBackground, #0f766e);
     @apply -translate-y-px;
     box-shadow: 0 4px 10px rgba(13, 148, 136, 0.25);
   }
@@ -85,11 +85,11 @@
   }
 
   .btn-d {
-    background: linear-gradient(135deg, #ef4444, #dc2626);
+    background: #ef4444;
     @apply text-white border border-white/10;
   }
   .btn-d:hover {
-    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    background: #dc2626;
     @apply -translate-y-px;
     box-shadow: 0 4px 10px rgba(239, 68, 68, 0.25);
   }
@@ -190,6 +190,11 @@
   .badge-error {
     @apply bg-red-500/10 text-red-400 border-red-500/20;
   }
+  .badge-info {
+    background: color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent);
+    border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 25%, transparent);
+    @apply text-vslink;
+  }
 
   /* ========== 开关 ========== */
   .tog {
@@ -230,6 +235,10 @@
   }
   .log-line.dim {
     @apply text-gray-600;
+  }
+
+  .copy-toast {
+    @apply text-center text-[10px] mt-1 text-emerald-400;
   }
 
   /* ========== 操作反馈 ========== */
@@ -324,14 +333,14 @@
   .toggle-section {
     @apply cursor-pointer select-none inline-flex items-center gap-1;
   }
-  .toggle-section::before {
+  .toggle-section::after {
     content: '';
-    @apply inline-block w-0 h-0 border-solid;
+    @apply inline-block w-0 h-0 border-solid ml-1;
     border-width: 4px 0 4px 6px;
     border-color: transparent transparent transparent currentColor;
-    @apply rotate-90 transition-transform duration-200 opacity-70;
+    @apply rotate-90 transition-transform duration-200 opacity-60;
   }
-  .toggle-section.collapsed::before {
+  .toggle-section.collapsed::after {
     @apply rotate-0;
   }
 
@@ -506,8 +515,7 @@
     @apply flex flex-col gap-1;
   }
   .env-check-item {
-    @apply border border-vsborder rounded-md p-2;
-    background: rgba(255, 255, 255, 0.015);
+    @apply border border-vsborder rounded-md p-2 bg-vsinput;
   }
   .env-check-top {
     @apply flex items-center justify-between gap-2 text-[11px] font-bold text-vsinputfg;
@@ -523,9 +531,8 @@
   }
 
   .patch-path {
-    @apply mb-2 px-2 py-1.5 rounded-md border;
-    background: rgba(255, 255, 255, 0.015);
-    border-color: rgba(94, 234, 212, 0.2);
+    @apply mb-2 px-2 py-1.5 rounded-md border bg-vsinput;
+    border-color: color-mix(in srgb, var(--vscode-button-background, #0d9488) 30%, var(--vscode-panel-border));
     border-style: dashed;
     @apply text-vsdesc text-[10px] leading-snug break-all;
   }
@@ -537,18 +544,20 @@
     @apply flex flex-col gap-2 text-vsdesc text-[10px] leading-relaxed;
   }
   .guide-block {
-    @apply border border-vsborder rounded-md p-2.5 relative;
-    background: rgba(255, 255, 255, 0.01);
+    @apply border border-vsborder rounded-md p-2.5 relative bg-vsinput;
     @apply transition-colors;
   }
   .guide-block:hover {
-    background: rgba(255, 255, 255, 0.02);
+    border-color: color-mix(in srgb, var(--vscode-button-background, #0d9488) 25%, var(--vscode-panel-border));
   }
 
   .tab-badge {
     @apply inline-flex items-center justify-center min-w-4 h-4 px-1 ml-1;
-    background: var(--vscode-errorForeground, #ef4444);
+    background: var(--vscode-notificationsWarningIcon-foreground, #fbbf24);
     @apply text-white rounded-lg text-[10px] font-bold leading-none;
+  }
+  .tab-badge.badge-error {
+    background: var(--vscode-errorForeground, #ef4444);
   }
   .tab-badge.badge-success {
     background: var(--vscode-testing-iconPassed, #34d399);
@@ -562,6 +571,36 @@
   }
   .byok2-stripe {
     @apply border-l-[3px] border-l-blue-500;
+  }
+
+  /* ========== BYOK 折叠卡片 ========== */
+  .byok-card {
+    @apply bg-vswidget rounded-lg border border-vsborder overflow-hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    @apply transition-all duration-200;
+  }
+  .byok-card:hover {
+    border-color: color-mix(in srgb, var(--vscode-button-background, #0d9488) 25%, var(--vscode-panel-border));
+  }
+  .byok-card-head {
+    @apply flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer select-none min-h-[22px];
+  }
+  .byok-card-head::after {
+    content: '';
+    @apply w-0 h-0 border-solid flex-shrink-0 ml-0.5;
+    border-width: 4px 0 4px 6px;
+    border-color: transparent transparent transparent currentColor;
+    @apply rotate-90 transition-transform duration-200 opacity-60;
+  }
+  .byok-card-head.collapsed::after {
+    @apply rotate-0;
+  }
+  .byok-card-title {
+    @apply flex-1 text-vsinputfg text-[11px] font-bold;
+    @apply overflow-hidden text-ellipsis whitespace-nowrap;
+  }
+  .byok-card-body {
+    @apply px-3 pb-3;
   }
 
   .guide-block b {
@@ -578,6 +617,12 @@
   .guide-code {
     @apply block bg-vsinput border border-vsborder rounded px-1.5 py-1 mt-1;
     @apply text-vslink font-mono text-[9px] leading-snug break-all;
+  }
+
+  /* 内联代码：统一 <code> 外观，避免浏览器默认 serif 等宽字体 */
+  code {
+    @apply bg-vsinput border border-vsborder rounded px-1 py-px;
+    @apply text-vslink font-mono text-[10px] break-words;
   }
 
   .guide-note {
@@ -613,7 +658,7 @@
   }
 
   .status-info {
-    @apply text-vsdesc;
+    @apply text-vsdesc whitespace-nowrap;
   }
 
   .status-value {
@@ -621,60 +666,66 @@
   }
 
   /* ========== 流程指示器 ========== */
+  /* ========== 流程指示器（竖向 stepper 卡片） ========== */
   .flow-indicator {
-    @apply mb-4 p-4 rounded-lg;
-    @apply bg-gradient-to-r from-teal-900/20 to-blue-900/20;
-    @apply border border-teal-500/30;
+    @apply mb-3 p-3 rounded-lg bg-vswidget border border-vsborder;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  }
+
+  .flow-card-title {
+    @apply text-xs font-bold text-vsinputfg mb-3;
   }
 
   .flow-steps {
-    @apply flex items-center justify-between mb-4;
+    @apply flex items-start justify-between mb-3;
   }
 
   .flow-step {
-    @apply flex items-center gap-2 flex-1;
+    @apply flex flex-col items-center gap-1.5 flex-1 min-w-0;
   }
 
   .flow-step-circle {
-    @apply w-8 h-8 rounded-full flex items-center justify-center;
-    @apply text-xs font-bold transition-all duration-300;
+    @apply w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border;
+    @apply text-[11px] font-bold transition-all duration-300;
   }
 
   .flow-step-circle.pending {
-    @apply bg-gray-700 text-gray-400;
+    @apply bg-vsinput text-vsdesc border-vsborder;
   }
 
   .flow-step-circle.active {
-    @apply bg-teal-500 text-white;
+    @apply bg-teal-500 text-white border-teal-400;
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.22);
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
   .flow-step-circle.completed {
-    @apply bg-green-500 text-white;
+    @apply bg-green-500 text-white border-green-400;
   }
 
   .flow-step-label {
-    @apply text-[10px] transition-colors;
+    @apply text-[10px] text-center leading-tight transition-colors;
   }
 
   .flow-step-label.pending {
-    @apply text-gray-500;
+    @apply text-vsdesc;
   }
 
   .flow-step-label.active {
-    @apply text-white font-semibold;
+    @apply text-vsinputfg font-semibold;
   }
 
   .flow-step-label.completed {
-    @apply text-white font-semibold;
+    @apply text-vsinputfg font-semibold;
   }
 
   .flow-divider {
-    @apply h-0.5 flex-1 mx-2 transition-colors;
+    @apply h-0.5 flex-1 mx-1 rounded-full transition-colors;
+    margin-top: 13px; /* 对齐圆圈竖直中心：28/2 - 2/2 */
   }
 
   .flow-divider.pending {
-    @apply bg-gray-600;
+    @apply bg-vsborder;
   }
 
   .flow-divider.completed {
@@ -682,23 +733,12 @@
   }
 
   .flow-hint {
-    @apply text-[10px] text-teal-300/80 leading-relaxed;
+    @apply text-[10px] leading-relaxed text-vsdesc;
+    @apply px-2.5 py-2 rounded-md bg-vsinput border border-vsborder;
   }
 
-  /* ========== BYOK 配置响应式布局 ========== */
-  @media (min-width: 800px) {
-    .byok-grid {
-      @apply grid grid-cols-2 gap-4;
-    }
-
-    .byok-card {
-      @apply mb-0; /* 移除卡片底部 margin，改用 gap */
-    }
-  }
-
-  @media (max-width: 799px) {
-    .byok-grid {
-      @apply flex flex-col gap-3;
-    }
+  /* ========== BYOK 配置布局（侧栏始终单列） ========== */
+  .byok-grid {
+    @apply flex flex-col gap-2.5;
   }
 }
