@@ -6,16 +6,24 @@ Devin Desktop BYOK 增强版 — 多模型路由、双槽位、思考强度控�
 
 > **更名说明：** 2026 年 6 月起 Windsurf 已更名为 [Devin Desktop](https://devin.ai/desktop/)。本项目同步更名为 **Devin BYOK Plus**，并保留对旧版 Windsurf 安装路径的兼容。
 
+## 项目来源
+
+**本仓库 fork 自 [jornlin/devin-byok-plus](https://github.com/jornlin/devin-byok-plus)，在上游仓库的基础上进行个人定制与功能增强。**
+
+衷心感谢 [@jornlin](https://github.com/jornlin) 的持续维护与功能完善。本 fork 在原有基础上新增：
+
+- **补全代理可选开关** (`ENABLE_COMPLETION_PROXY`)：支持禁用本地 Inference 代理，保留 Devin/Codeium 原生补全与 Tab 跳转，聊天 BYOK 不受影响
+- 其他个人定制优化
+
+上游项目最初 fork 自 [@ycx932436](https://github.com/ycx932436) 开创的 [devin-byok-bridge](https://github.com/ycx932436/devin-byok-bridge)，感谢开源社区的无私贡献！
+
 ## 致谢
 
-**本项目 fork 自 [ycx932436/devin-byok-bridge](https://github.com/ycx932436/devin-byok-bridge)，在原作者出色工作的基础上进行功能扩展与持续维护。**
+**原始项目来自 [ycx932436/devin-byok-bridge](https://github.com/ycx932436/devin-byok-bridge)，在原作者出色工作的基础上进行功能扩展与持续维护。**
 
-衷心感谢原作者 [@ycx932436](https://github.com/ycx932436) 打下的坚实基础，开创了 Devin Desktop BYOK 本地代理的先河。本仓库在原有基础上的增强包括：
+衷心感谢原作者 [@ycx932436](https://github.com/ycx932436) 打下的坚实基础，开创了 Devin Desktop BYOK 本地代理的先河。
 
-- 请求重试与熔断机制
-- 持续的 bug 修复与文档完善
-
-**再次向原作者致敬，感谢开源精神！**
+**再次向开源社区致敬，感谢所有贡献者！**
 
 **设计定位：** 仅在本机运行（默认 `127.0.0.1`），代理与配置由用户自行管理，**不面向公网或多用户部署**。
 
@@ -210,7 +218,7 @@ ADMIN_TOKEN=                  # 可选；设置后 /api/config POST 需 Bearer �
 
 可选环境变量（手动写入 `.env`）：
 
-- `ENABLE_COMPLETION_PROXY=false` — 禁用本地 Inference 补全代理，保留 Devin/Codeium 原生补全与 Tab 跳转；聊天 BYOK 不受影响
+- `ENABLE_COMPLETION_PROXY=false` — **[新增]** 禁用本地 Inference 补全代理，保留 Devin/Codeium 原生补全与 Tab 跳转；聊天 BYOK 不受影响。设置后需在侧栏重新「安装补丁」并「重载窗口」
 - `OPENAI_ENABLE_REASONING=false` — 关闭 GPT reasoning
 - `GATEWAY_CAPABILITY_TTL_MS=3600000` — 网关能力缓存 TTL；用于记住某网关是否优先走 Chat Completions
 - `STRIP_UNSIGNED_THINKING=false` — 保留无 signature 的 Claude thinking 块（默认剔除，建议保持默认）
@@ -220,7 +228,9 @@ ADMIN_TOKEN=                  # 可选；设置后 /api/config POST 需 Bearer �
 
 ## 已知限制
 
-- **代码补全 (Completions)** 默认走本地 Inference 补全代理，仅支持 Anthropic 通道，使用 BYOK #1 镜像配置；暂不支持 GPT 补全。若需要保留 Devin/Codeium 原生补全、跨行 Tab 跳转或 next edit，请设置 `ENABLE_COMPLETION_PROXY=false`
+- **代码补全 (Completions)** 默认走本地 Inference 补全代理，仅支持 Anthropic 通道，使用 BYOK #1 镜像配置；暂不支持 GPT 补全。
+  - **新增功能**：可通过设置 `ENABLE_COMPLETION_PROXY=false` 禁用本地补全代理，保留 Devin/Codeium 原生补全、跨行 Tab 跳转或 next edit 功能，聊天 BYOK 不受影响
+  - 禁用补全代理后，扩展会自动跳过/清理 Inference URL 补丁，只保留聊天 BYOK 补丁
 - **GPT** 无独立 Devin BYOK 入口，需在 BYOK 槽位中选择 GPT 模型
 - 网关需支持对应 API：Claude `/v1/messages`；GPT/Gemini 优先 `/v1/responses`，不支持时回退 `/v1/chat/completions`
 - 上游 API 域名在过渡期内仍可能使用 `*.windsurf.com` / `*.codeium.com`（见 [Devin Desktop FAQ](https://docs.devin.ai/desktop/devin-desktop-faq)）
