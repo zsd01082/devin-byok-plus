@@ -29,6 +29,9 @@ class ProxyManager {
   getInferencePort(tmp0) {
     return proxyConfig.getInferencePort(tmp0);
   }
+  isCompletionProxyEnabled(tmp0) {
+    return proxyConfig.isCompletionProxyEnabled(tmp0);
+  }
   async ensureDevinDesktopHttpProxySettings(tmp0) {
     await this.restoreDevinDesktopHttpProxySettings();
     this.log("已跳过全局 http.proxy 同步；Devin Desktop API 请求仅通过补丁指向 http://127.0.0.1:" + tmp0);
@@ -474,7 +477,7 @@ class ProxyManager {
   writeEnvConfig(tmp0) {
     const tmp1 = this.getEnvFilePath();
     const tmp2 = this.readEnvConfig();
-    const tmp3 = new Set(["ANTHROPIC_API_HOST", "ANTHROPIC_API_KEY", "ANTHROPIC_API_PATH", "OPENAI_API_HOST", "OPENAI_API_KEY", "OPENAI_API_PATH", "HYBRID_PORT", "INFERENCE_PORT", "DEFAULT_MODEL", "MAX_TOKENS", "OPENAI_REASONING_EFFORT", "OPENAI_THINKING_ENABLED", "COMPLETION_TIMEOUT_MS", "SYSTEM_PROMPT_OVERRIDE", "SYSTEM_PROMPT_PATH", "BYOK1_ANTHROPIC_API_HOST", "BYOK1_ANTHROPIC_API_KEY", "BYOK1_ANTHROPIC_API_PATH", "BYOK1_OPENAI_API_HOST", "BYOK1_OPENAI_API_KEY", "BYOK1_OPENAI_API_PATH", "BYOK1_MODEL", "BYOK1_THINKING_EFFORT", "BYOK2_ANTHROPIC_API_HOST", "BYOK2_ANTHROPIC_API_KEY", "BYOK2_ANTHROPIC_API_PATH", "BYOK2_OPENAI_API_HOST", "BYOK2_OPENAI_API_KEY", "BYOK2_OPENAI_API_PATH", "BYOK2_MODEL", "BYOK2_THINKING_EFFORT"]);
+    const tmp3 = new Set(["ANTHROPIC_API_HOST", "ANTHROPIC_API_KEY", "ANTHROPIC_API_PATH", "OPENAI_API_HOST", "OPENAI_API_KEY", "OPENAI_API_PATH", "HYBRID_PORT", "INFERENCE_PORT", "ENABLE_COMPLETION_PROXY", "DEFAULT_MODEL", "MAX_TOKENS", "OPENAI_REASONING_EFFORT", "OPENAI_THINKING_ENABLED", "COMPLETION_TIMEOUT_MS", "SYSTEM_PROMPT_OVERRIDE", "SYSTEM_PROMPT_PATH", "BYOK1_ANTHROPIC_API_HOST", "BYOK1_ANTHROPIC_API_KEY", "BYOK1_ANTHROPIC_API_PATH", "BYOK1_OPENAI_API_HOST", "BYOK1_OPENAI_API_KEY", "BYOK1_OPENAI_API_PATH", "BYOK1_MODEL", "BYOK1_THINKING_EFFORT", "BYOK2_ANTHROPIC_API_HOST", "BYOK2_ANTHROPIC_API_KEY", "BYOK2_ANTHROPIC_API_PATH", "BYOK2_OPENAI_API_HOST", "BYOK2_OPENAI_API_KEY", "BYOK2_OPENAI_API_PATH", "BYOK2_MODEL", "BYOK2_THINKING_EFFORT"]);
     const tmp4 = Object.entries(tmp2).filter(([tmp02]) => !tmp3.has(tmp02) && /^[A-Za-z_][A-Za-z0-9_]*$/.test(tmp02)).map(([tmp02, tmp13]) => tmp02 + "=" + tmp13);
     const tmp5 = this.getSystemPromptConfigPath(tmp0);
     const tmp6 = ["# Devin BYOK Bridge 配置（由扩展管理）"];
@@ -511,6 +514,7 @@ class ProxyManager {
     tmp6.push("", "# ─── 通用 ───");
     tmp6.push("HYBRID_PORT=" + this.getHybridPort(tmp0).toString());
     tmp6.push("INFERENCE_PORT=" + this.getInferencePort(tmp0).toString());
+    tmp6.push("ENABLE_COMPLETION_PROXY=" + (this.isCompletionProxyEnabled(tmp0) ? "true" : "false"));
     if (tmp10) {
       tmp6.push("DEFAULT_MODEL=" + tmp10);
     }
@@ -559,6 +563,7 @@ class ProxyManager {
       OPENAI_API_HOST: tmp0.BYOK1_OPENAI_API_HOST ? this.stripProtocol(tmp0.BYOK1_OPENAI_API_HOST) : tmp0.OPENAI_API_HOST ? this.stripProtocol(tmp0.OPENAI_API_HOST) : "",
       OPENAI_API_KEY: tmp0.BYOK1_OPENAI_API_KEY || tmp0.BYOK1_ANTHROPIC_API_KEY || tmp0.OPENAI_API_KEY || tmp0.ANTHROPIC_API_KEY || "",
       OPENAI_API_PATH: tmp0.BYOK1_OPENAI_API_PATH || tmp0.OPENAI_API_PATH || "",
+      ENABLE_COMPLETION_PROXY: this.isCompletionProxyEnabled(tmp0) ? "true" : "false",
       OPENAI_REASONING_EFFORT: Object.prototype.hasOwnProperty.call(tmp0, "OPENAI_REASONING_EFFORT") ? tmp0.OPENAI_REASONING_EFFORT : tmp0.BYOK1_THINKING_EFFORT || "",
       OPENAI_THINKING_ENABLED: tmp0.OPENAI_THINKING_ENABLED === "true" || !!tmp0.BYOK1_THINKING_EFFORT,
       COMPLETION_TIMEOUT_MS: this.getCompletionTimeoutMs(tmp0)
@@ -794,12 +799,13 @@ class ProxyManager {
     } : tmp3);
     const tmp5 = this.getHybridPort(tmp4);
     let tmp6 = this.getInferencePort(tmp4);
+    const completionProxyEnabled = this.isCompletionProxyEnabled(tmp4);
     if (!(await this.isPortAvailable(tmp5))) {
       if (await this.isOurProxyRunning(tmp5)) {
         this.log("端口 " + tmp5 + " 已有代理运行（来自其他窗口），复用中");
         this.externalProxy = true;
         this.activeHybridPort = tmp5;
-        this.activeInferencePort = tmp6;
+        this.activeInferencePort = completionProxyEnabled ? tmp6 : undefined;
         this.startTime = Date.now();
         const tmp03 = {
           hybridPort: tmp5,
@@ -884,17 +890,20 @@ class ProxyManager {
       return false;
     }
     this.activeHybridPort = tmp5;
-    this.activeInferencePort = tmp6;
+    this.activeInferencePort = completionProxyEnabled ? tmp6 : undefined;
     this.startTime = Date.now();
     this.requestCount = 0;
     this.restartCount = 0;
     this.log("hybrid-server 已启动 (port " + tmp5 + ")");
-    if (tmp5 !== 3006 || tmp0 === "both" && tmp6 !== 3001) {
+    if (tmp5 !== 3006 || completionProxyEnabled && tmp0 === "both" && tmp6 !== 3001) {
       this.log("提示: 非默认端口；侧栏「保存配置」会按端口同步 Devin Desktop 补丁，修改后请重启 IDE。");
     }
     this.updateStatusBar();
     await this.ensureDevinDesktopHttpProxySettings(tmp5);
-    if (tmp0 === "both") {
+    if (tmp0 === "both" && !completionProxyEnabled) {
+      this.log("补全代理已禁用；Devin Desktop 代码补全将继续使用原生 Inference 服务");
+    }
+    if (tmp0 === "both" && completionProxyEnabled) {
       const tmp02 = path.join(this.proxyRoot, "src", "inference-proxy.js");
       if (!fs.existsSync(tmp02)) {
         this.log("警告: 找不到 inference-proxy.js，已跳过内联补全代理");
@@ -1025,6 +1034,7 @@ class ProxyManager {
       inferencePid: this.inferenceProcess?.pid ?? null,
       hybridPort: this.activeHybridPort ?? this.getHybridPort(tmp0),
       inferencePort: this.activeInferencePort ?? this.getInferencePort(tmp0),
+      completionProxyEnabled: this.isCompletionProxyEnabled(tmp0),
       uptime: tmp1 ? Date.now() - this.startTime : 0,
       requestCount: this.requestCount
     };

@@ -181,6 +181,7 @@ OPENAI_THINKING_ENABLED=
 ```
 HYBRID_PORT=3006
 INFERENCE_PORT=3001
+ENABLE_COMPLETION_PROXY=true
 MAX_TOKENS=16384
 COMPLETION_TIMEOUT_MS=12000
 SYSTEM_PROMPT_OVERRIDE=
@@ -192,6 +193,7 @@ ADMIN_TOKEN=                  # 可选；设置后 /api/config POST 需 Bearer �
 
 可选环境变量（手动写入 `.env`）：
 
+- `ENABLE_COMPLETION_PROXY=false` — 禁用本地 Inference 补全代理，保留 Devin/Codeium 原生补全与 Tab 跳转；聊天 BYOK 不受影响
 - `OPENAI_ENABLE_REASONING=false` — 关闭 GPT reasoning
 - `GATEWAY_CAPABILITY_TTL_MS=3600000` — 网关能力缓存 TTL；用于记住某网关是否优先走 Chat Completions
 - `STRIP_UNSIGNED_THINKING=false` — 保留无 signature 的 Claude thinking 块（默认剔除，建议保持默认）
@@ -201,7 +203,7 @@ ADMIN_TOKEN=                  # 可选；设置后 /api/config POST 需 Bearer �
 
 ## 已知限制
 
-- **代码补全 (Completions)** 仅走 Anthropic 通道，使用 BYOK #1 镜像配置；暂不支持 GPT 补全
+- **代码补全 (Completions)** 默认走本地 Inference 补全代理，仅支持 Anthropic 通道，使用 BYOK #1 镜像配置；暂不支持 GPT 补全。若需要保留 Devin/Codeium 原生补全、跨行 Tab 跳转或 next edit，请设置 `ENABLE_COMPLETION_PROXY=false`
 - **GPT** 无独立 Devin BYOK 入口，需在 BYOK 槽位中选择 GPT 模型
 - 网关需支持对应 API：Claude `/v1/messages`；GPT/Gemini 优先 `/v1/responses`，不支持时回退 `/v1/chat/completions`
 - 上游 API 域名在过渡期内仍可能使用 `*.windsurf.com` / `*.codeium.com`（见 [Devin Desktop FAQ](https://docs.devin.ai/desktop/devin-desktop-faq)）
@@ -209,6 +211,8 @@ ADMIN_TOKEN=                  # 可选；设置后 /api/config POST 需 Bearer �
 ## 常见问题
 
 **补丁失效**：Devin Desktop 更新后重新「安装补丁」并「重载窗口」。
+
+**保留原生补全**：在 `proxy-scripts/.env` 写入 `ENABLE_COMPLETION_PROXY=false`，然后在侧栏重新「安装补丁」并「重载窗口」。扩展会跳过/清理 Inference URL 补丁，只保留聊天 BYOK 补丁。
 
 **端口占用**：修改 Hybrid/Inference 端口后重新启动代理。
 
@@ -414,5 +418,4 @@ pnpm run package
     <p>欢迎都来加入L站大家庭。 </p>
 
 </div>
-
 

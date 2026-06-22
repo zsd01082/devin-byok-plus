@@ -304,6 +304,7 @@ class SidebarProvider {
     if (!String(tmp1.BYOK1_THINKING_EFFORT || "").trim()) {
       tmp1.BYOK1_THINKING_EFFORT = tmp1.OPENAI_REASONING_EFFORT || "";
     }
+    tmp1.ENABLE_COMPLETION_PROXY = this.getCompletionProxyEnvValue(tmp1);
     return tmp1;
   }
   validateByokSlots(tmp02) {
@@ -325,11 +326,26 @@ class SidebarProvider {
   getRuntimeConfigForCurrentMode(tmp02 = this.proxyManager.readEnvConfig()) {
     return this.getModeScopedConfig(tmp02);
   }
+  getPatchOptions(tmp02 = this.proxyManager.readEnvConfig()) {
+    return {
+      enableCompletionProxy: this.proxyManager.isCompletionProxyEnabled(tmp02)
+    };
+  }
+  getCompletionProxyEnvValue(tmp02 = this.proxyManager.readEnvConfig()) {
+    return this.proxyManager.isCompletionProxyEnabled(tmp02) ? "true" : "false";
+  }
   writeModeScopedConfig(tmp02) {
+    const incomingConfig = tmp02 && typeof tmp02 === "object" ? tmp02 : {};
+    const currentConfig = this.proxyManager.readEnvConfig();
     const merged = this.normalizeProviderBaseUrl({
-      ...this.proxyManager.readEnvConfig(),
-      ...tmp02
+      ...currentConfig,
+      ...incomingConfig
     });
+    if (Object.prototype.hasOwnProperty.call(incomingConfig, "ENABLE_COMPLETION_PROXY")) {
+      merged.ENABLE_COMPLETION_PROXY = this.getCompletionProxyEnvValue(incomingConfig);
+    } else {
+      merged.ENABLE_COMPLETION_PROXY = this.getCompletionProxyEnvValue(currentConfig);
+    }
     this.proxyManager.writeEnvConfig(merged);
     return merged;
   }
@@ -881,7 +897,7 @@ class SidebarProvider {
   }
   getPatchStatus() {
     const tmp02 = this.proxyManager.getStatus();
-    return patchManager_1.PatchManager.getStatus(this.getStoredPatchExtensionPath(), patchManager_1.PatchManager.loopbackApiUrl(tmp02.hybridPort), patchManager_1.PatchManager.loopbackApiUrl(tmp02.inferencePort));
+    return patchManager_1.PatchManager.getStatus(this.getStoredPatchExtensionPath(), patchManager_1.PatchManager.loopbackApiUrl(tmp02.hybridPort), patchManager_1.PatchManager.loopbackApiUrl(tmp02.inferencePort), this.getPatchOptions());
   }
   envCheckItem(tmp02, tmp1, tmp2, tmp3, tmp4) {
     const tmp5 = {
@@ -941,15 +957,17 @@ class SidebarProvider {
     const tmp4 = requiredFiles.filter(arg0 => !fs.existsSync(path.join(tmp1, arg0)));
     tmp02.push(this.envCheckItem("proxy-root", "内置代理目录", tmp4.length === 0 ? "ok" : "error", tmp4.length === 0 ? tmp1 : "缺少 " + tmp4.join(", "), false));
     tmp02.push(this.envCheckItem("env-file", "配置文件", fs.existsSync(tmp2) ? "ok" : "warning", fs.existsSync(tmp2) ? tmp2 : "缺少 .env，将使用默认配置生成", !fs.existsSync(tmp2)));
-    const tmp5 = ["HYBRID_PORT", "INFERENCE_PORT"].filter(arg0 => !this.isValidPortValue(tmp3[arg0]));
+    const completionProxyEnabled = this.proxyManager.isCompletionProxyEnabled(tmp3);
+    const tmp5 = ["HYBRID_PORT", ...(completionProxyEnabled ? ["INFERENCE_PORT"] : [])].filter(arg0 => !this.isValidPortValue(tmp3[arg0]));
     const tmp6 = !this.isValidCompletionTimeoutValue(tmp3.COMPLETION_TIMEOUT_MS);
     const tmp7 = this.proxyManager.portsFromConfig(tmp3);
     const tmp8 = this.proxyManager.getStatus().running;
     const tmp9 = tmp8 ? true : await this.isPortFree(tmp7.hybridPort);
-    const tmp10 = tmp8 ? true : await this.isPortFree(tmp7.inferencePort);
-    const tmp11 = [!tmp9 ? "Hybrid " + tmp7.hybridPort : "", !tmp10 ? "Inference " + tmp7.inferencePort : ""].filter(Boolean);
-    tmp02.push(this.envCheckItem("ports", "代理端口", tmp5.length > 0 || tmp11.length > 0 ? "warning" : "ok", tmp5.length > 0 ? "端口值异常：" + tmp5.join(", ") : tmp11.length > 0 ? "端口已占用：" + tmp11.join(", ") + "；请手动关闭占用进程或更换端口" : "Hybrid " + tmp7.hybridPort + " / Inference " + tmp7.inferencePort, tmp5.length > 0));
+    const tmp10 = !completionProxyEnabled || tmp8 ? true : await this.isPortFree(tmp7.inferencePort);
+    const tmp11 = [!tmp9 ? "Hybrid " + tmp7.hybridPort : "", completionProxyEnabled && !tmp10 ? "Inference " + tmp7.inferencePort : ""].filter(Boolean);
+    tmp02.push(this.envCheckItem("ports", "代理端口", tmp5.length > 0 || tmp11.length > 0 ? "warning" : "ok", tmp5.length > 0 ? "端口值异常：" + tmp5.join(", ") : tmp11.length > 0 ? "端口已占用：" + tmp11.join(", ") + "；请手动关闭占用进程或更换端口" : completionProxyEnabled ? "Hybrid " + tmp7.hybridPort + " / Inference " + tmp7.inferencePort : "Hybrid " + tmp7.hybridPort + " / Inference 已禁用", tmp5.length > 0));
     tmp02.push(this.envCheckItem("completion-timeout", "补全超时配置", tmp6 ? "warning" : "ok", tmp6 ? "COMPLETION_TIMEOUT_MS 需在 2000-60000ms；将修复为 12000ms" : "COMPLETION_TIMEOUT_MS=" + (tmp3.COMPLETION_TIMEOUT_MS || "12000") + "ms", tmp6));
+    tmp02.push(this.envCheckItem("completion-proxy", "补全代理", "ok", completionProxyEnabled ? "已启用：代码补全走本地 Inference 代理" : "已禁用：代码补全保留 Devin/Codeium 原生服务，聊天 BYOK 不受影响", false));
     const tmp12 = this.readProxyDependencyKeys();
     const tmp13 = path.join(tmp1, "node_modules");
     tmp02.push(this.envCheckItem("runtime-deps", "运行依赖", tmp12 === undefined ? "warning" : tmp12.length === 0 || fs.existsSync(tmp13) ? "ok" : "warning", tmp12 === undefined ? "package.json 无法解析" : tmp12.length === 0 ? "当前标准环境无 npm 依赖，node_modules 非必需" : fs.existsSync(tmp13) ? "已安装 " + tmp12.length + " 个依赖声明" : "缺少 node_modules，启动代理时会尝试安装 " + tmp12.length + " 个依赖", false));
@@ -972,7 +990,8 @@ class SidebarProvider {
     const tmp23 = tmp22.patches.filter(arg0 => arg0.status !== "applied");
     const tmp24 = !!tmp22.path && tmp23.length > 0;
     const tmp25 = tmp23.map(arg0 => arg0.name + "=" + arg0.status).join("；");
-    tmp02.push(this.envCheckItem("devin-patch", "Devin Desktop 补丁", tmp23.length === 0 ? "ok" : "warning", !tmp22.path ? "未找到 Devin Desktop extension.js" : tmp23.length === 0 ? "已安装" : "未就绪 " + tmp23.length + "/" + tmp22.patches.length + "；可能是端口变更或 Devin 版本不兼容；" + tmp25, tmp24));
+    const tmp26 = tmp23.some(arg0 => arg0.status === "stale");
+    tmp02.push(this.envCheckItem("devin-patch", "Devin Desktop 补丁", tmp23.length === 0 ? "ok" : "warning", !tmp22.path ? "未找到 Devin Desktop extension.js" : tmp23.length === 0 ? "已安装" : tmp26 ? "补全代理已禁用，但旧 Inference 补丁仍存在；点击一键修复或安装补丁以恢复原生补全；" + tmp25 : "未就绪 " + tmp23.length + "/" + tmp22.patches.length + "；可能是端口变更或 Devin 版本不兼容；" + tmp25, tmp24));
     return {
       ok: tmp02.every(arg0 => arg0.status === "ok"),
       checkedAt: new Date().toLocaleString(),
@@ -1222,7 +1241,7 @@ class SidebarProvider {
     const tmp4 = this.proxyManager.getStatus();
     const tmp5 = this.getPatchStatus();
     if (tmp5.path && tmp5.patches.some(arg0 => arg0.status !== "applied")) {
-      patchManager_1.PatchManager.applyWithCustomUrls(patchManager_1.PatchManager.loopbackApiUrl(tmp4.hybridPort), patchManager_1.PatchManager.loopbackApiUrl(tmp4.inferencePort), this.getStoredPatchExtensionPath() || undefined);
+      patchManager_1.PatchManager.applyWithCustomUrls(patchManager_1.PatchManager.loopbackApiUrl(tmp4.hybridPort), patchManager_1.PatchManager.loopbackApiUrl(tmp4.inferencePort), this.getStoredPatchExtensionPath() || undefined, this.getPatchOptions());
     }
     return await this.checkManagedEnvironment();
   }
@@ -1245,7 +1264,7 @@ class SidebarProvider {
     const tmp4 = patchManager_1.PatchManager.loopbackApiUrl(tmp3.hybridPort);
     const tmp5 = patchManager_1.PatchManager.loopbackApiUrl(tmp3.inferencePort);
     const tmp6 = this.getStoredPatchExtensionPath();
-    const tmp7 = patchManager_1.PatchManager.applyWithCustomUrls(tmp4, tmp5, tmp6);
+    const tmp7 = patchManager_1.PatchManager.applyWithCustomUrls(tmp4, tmp5, tmp6, this.getPatchOptions());
     if (tmp7.applied <= 0) {
       return;
     }
@@ -1582,6 +1601,7 @@ class SidebarProvider {
             await vscode.window.showErrorMessage(tmp1);
             break;
           }
+          const previousStatus = this.proxyManager.getStatus();
           const tmp2 = this.writeModeScopedConfig(tmp03);
           const tmp3 = this.getRuntimeConfigForCurrentMode(tmp2);
           const tmp4 = this.proxyManager.getStatus();
@@ -1591,12 +1611,14 @@ class SidebarProvider {
               hybridPort: tmp04,
               inferencePort: tmp12
             } = this.proxyManager.portsFromConfig(tmp2);
-            const tmp22 = tmp4.hybridPort !== tmp04 || tmp4.inferencePort !== tmp12;
+            const completionProxyChanged = previousStatus.completionProxyEnabled !== tmp4.completionProxyEnabled;
+            const completionProxyRuntimeMismatch = !tmp4.completionProxyEnabled && !!tmp4.inferencePid;
+            const tmp22 = tmp4.hybridPort !== tmp04 || tmp4.inferencePort !== tmp12 || completionProxyChanged || completionProxyRuntimeMismatch;
             if (tmp22) {
               this.proxyManager.stop();
               const tmp32 = await this.proxyManager.start("both", tmp3);
-              tmp5 = tmp32 ? "配置已保存；端口变更，代理已重启并使用新配置" : "配置已保存；端口变更但代理重启失败：" + (this.proxyManager.getLastStartError() || "未知错误");
-              this.postActionState("patch", "success", "端口已变更；如需让 Devin Desktop 使用新端口，请手动点击“安装补丁”并重载窗口");
+              tmp5 = tmp32 ? "配置已保存；端口或补全代理开关变更，代理已重启并使用新配置" : "配置已保存；端口或补全代理开关变更但代理重启失败：" + (this.proxyManager.getLastStartError() || "未知错误");
+              this.postActionState("patch", "success", "端口或补全代理开关已变更；请手动点击“安装补丁”并重载窗口");
             } else {
               const tmp05 = {
                 hybridPort: tmp04,
@@ -1875,7 +1897,7 @@ class SidebarProvider {
           const tmp3 = tmp02.apiUrl || tmp1;
           const tmp4 = tmp02.inferenceUrl || tmp2;
           const tmp5 = tmp02.extJsPath || this.getStoredPatchExtensionPath() || undefined;
-          const tmp6 = patchManager_1.PatchManager.applyWithCustomUrls(tmp3, tmp4, tmp5);
+          const tmp6 = patchManager_1.PatchManager.applyWithCustomUrls(tmp3, tmp4, tmp5, this.getPatchOptions());
           const tmp7 = tmp6.applied > 0 ? "补丁已应用 " + tmp6.applied + "/" + (tmp6.applied + tmp6.skipped + tmp6.failed) + "，需重载窗口生效" : tmp6.skipped > 0 ? "所有补丁已是最新" : "未找到可应用的补丁";
           const tmp8 = "重载窗口";
           if (tmp6.applied > 0) {

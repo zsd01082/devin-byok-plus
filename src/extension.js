@@ -45,7 +45,9 @@ function activate(context) {
       const status = proxyManager.getStatus();
       const result = PatchManager.applyWithCustomUrls(
         PatchManager.loopbackApiUrl(status.hybridPort),
-        PatchManager.loopbackApiUrl(status.inferencePort)
+        PatchManager.loopbackApiUrl(status.inferencePort),
+        undefined,
+        sidebar.getPatchOptions()
       );
       if (result.applied > 0) {
         vscode.window.showInformationMessage('已应用 ' + result.applied + ' 个补丁，需重启 Devin Desktop', '重启 Devin').then(choice => {
