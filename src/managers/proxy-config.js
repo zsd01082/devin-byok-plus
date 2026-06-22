@@ -34,6 +34,10 @@ function getInferencePort(config) {
   return parsePort(config?.INFERENCE_PORT, 3001);
 }
 
+function isCompletionProxyEnabled(config) {
+  return String(config?.ENABLE_COMPLETION_PROXY ?? 'true').trim().toLowerCase() !== 'false';
+}
+
 /**
  * 从配置中提取端口
  */
@@ -244,6 +248,7 @@ module.exports = {
   parsePort,
   getHybridPort,
   getInferencePort,
+  isCompletionProxyEnabled,
   portsFromConfig,
   stripProtocol,
   normalizeSystemPromptPathValue,

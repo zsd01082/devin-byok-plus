@@ -56,6 +56,22 @@ function getPatches() {
   }
   return patchCache;
 }
+function shouldEnableCompletionProxy(tmp0) {
+  if (typeof tmp0 === "boolean") {
+    return tmp0;
+  }
+  if (typeof tmp0 === "string") {
+    return tmp0.trim().toLowerCase() !== "false";
+  }
+  if (tmp0 && Object.prototype.hasOwnProperty.call(tmp0, "enableCompletionProxy")) {
+    return shouldEnableCompletionProxy(tmp0.enableCompletionProxy);
+  }
+  return true;
+}
+function getActivePatches(tmp0) {
+  const tmp1 = shouldEnableCompletionProxy(tmp0);
+  return getPatches().filter(arg0 => tmp1 || !arg0.name.startsWith("P3:"));
+}
 class PatchManager {
   static resolveExtensionJsPath(tmp0) {
     const tmp1 = tmp0 || PatchManager.findExtensionJs();
@@ -338,24 +354,34 @@ class PatchManager {
     }
     return tmp0.find(arg0 => fs.existsSync(arg0)) || null;
   }
-  static getStatus(tmp0, tmp1 = "http://127.0.0.1:3006", tmp2 = "http://127.0.0.1:3001") {
+  static getStatus(tmp0, tmp1 = "http://127.0.0.1:3006", tmp2 = "http://127.0.0.1:3001", tmpOptions = {}) {
     const tmp3 = PatchManager.resolveExtensionJsPath(tmp0);
     if (!tmp3) {
       return {
         path: null,
-        patches: getPatches().map(arg0 => ({
+        patches: getActivePatches(tmpOptions).map(arg0 => ({
           name: arg0.name,
           status: "missing"
         }))
       };
     }
     const tmp4 = fs.readFileSync(tmp3, "utf-8");
+    const tmp5 = getActivePatches(tmpOptions).map(arg0 => ({
+      name: arg0.name,
+      status: PatchManager.isPatched(tmp4, arg0, tmp1, tmp2) ? "applied" : PatchManager.isAvailable(tmp4, arg0) ? "available" : "missing"
+    }));
+    if (!shouldEnableCompletionProxy(tmpOptions)) {
+      const tmp02 = getPatches().find(arg0 => arg0.name.startsWith("P3:"));
+      if (tmp02 && PatchManager.isPatched(tmp4, tmp02, tmp1, tmp2)) {
+        tmp5.push({
+          name: tmp02.name + "（已禁用但仍存在）",
+          status: "stale"
+        });
+      }
+    }
     return {
       path: tmp3,
-      patches: getPatches().map(arg0 => ({
-        name: arg0.name,
-        status: PatchManager.isPatched(tmp4, arg0, tmp1, tmp2) ? "applied" : PatchManager.isAvailable(tmp4, arg0) ? "available" : "missing"
-      }))
+      patches: tmp5
     };
   }
   static apply(tmp0, tmp1 = "http://127.0.0.1:3006", tmp2 = "http://127.0.0.1:3001") {
@@ -409,7 +435,7 @@ class PatchManager {
       }
     } catch {}
   }
-  static applyWithCustomUrls(tmp0, tmp1, tmp2) {
+  static applyWithCustomUrls(tmp0, tmp1, tmp2, tmpOptions = {}) {
     const tmp3 = PatchManager.resolveExtensionJsPath(tmp2);
     if (!tmp3) {
       return {
@@ -427,15 +453,22 @@ class PatchManager {
     }
     let tmp6 = fs.readFileSync(tmp3, "utf-8");
     const tmp7 = tmp5 ? fs.readFileSync(tmp5, "utf-8") : fs.existsSync(tmp4) ? fs.readFileSync(tmp4, "utf-8") : null;
+    const tmp15 = !shouldEnableCompletionProxy(tmpOptions);
+    const tmp16 = tmp15 ? getPatches().find(arg0 => arg0.name.startsWith("P3:")) : undefined;
+    const tmp17 = !!tmp16 && PatchManager.isPatched(tmp6, tmp16, tmp0, tmp1);
     const tmp8 = getPatches().some(arg0 => PatchManager.isPatched(tmp6, arg0, tmp0, tmp1));
     if (tmp8 && tmp7) {
       tmp6 = tmp7;
     }
+    const tmp14 = getActivePatches(tmpOptions);
     const tmp9 = [];
+    if (tmp15) {
+      tmp9.push(tmp17 ? "[清理] P3: 重定向 Inference URL (补全代理已禁用，正在恢复原生补全)" : "[跳过] P3: 重定向 Inference URL (补全代理已禁用)");
+    }
     let tmp10 = 0;
     let tmp11 = 0;
     let tmp12 = 0;
-    for (const tmp02 of getPatches()) {
+    for (const tmp02 of tmp14) {
       if (PatchManager.isPatched(tmp6, tmp02, tmp0, tmp1)) {
         tmp11++;
         tmp9.push("[跳过] " + tmp02.name + " (已应用)");
@@ -456,9 +489,15 @@ class PatchManager {
       tmp10++;
       tmp9.push("[成功] " + tmp02.name);
     }
-    if (tmp10 > 0) {
+    if (tmp10 > 0 || tmp17 && tmp7) {
       fs.writeFileSync(tmp3, tmp6, "utf-8");
       PatchManager.updateChecksum(tmp3);
+      if (tmp10 <= 0 && tmp17) {
+        tmp10++;
+      }
+    } else if (tmp17 && !tmp7) {
+      tmp12++;
+      tmp9.push("[失败] P3: 重定向 Inference URL (缺少备份，无法自动清理)");
     }
     const tmp13 = {
       success: tmp12 === 0,
