@@ -481,7 +481,7 @@ export async function handleModelsRequest(arg0, arg1, arg2) {
 }
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 const ALLOW_UNAUTH_CONFIG_POST = process.env.ALLOW_UNAUTH_CONFIG_POST === "true";
-const CONFIG_POST_MAX_BYTES = 16384;
+const CONFIG_POST_MAX_BYTES = 64000;
 
 /**
  * 授权配置修改请求

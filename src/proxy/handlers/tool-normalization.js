@@ -52,6 +52,14 @@ export function normalizeToolInvocation(arg0, arg1) {
     browser: "browser_preview"
   };
   tmp2 = tmp4[tmp2] || tmp2;
+  // 流式 tool_use 的 arguments 可能是被截断/非法的 JSON 字符串，normalizeToolArguments 会原样返回字符串。
+  // 此时不能在字符串上做键重映射（remapKey 会抛 TypeError 并导致整个代理进程崩溃），直接返回。
+  if (tmp3 === null || typeof tmp3 !== "object" || Array.isArray(tmp3)) {
+    return {
+      toolName: tmp2,
+      params: tmp3
+    };
+  }
   if (tmp2 === "read_file") {
     remapKey(tmp3, "target_file", "file_path");
     remapKey(tmp3, "path", "file_path");
@@ -283,12 +291,18 @@ export function normalizeAskUserOptions(arg0) {
   return [];
 }
 function remapKey(arg0, arg1, arg2) {
+  if (!arg0 || typeof arg0 !== "object" || Array.isArray(arg0)) {
+    return;
+  }
   if (arg0[arg1] !== undefined && arg0[arg2] === undefined) {
     arg0[arg2] = arg0[arg1];
     delete arg0[arg1];
   }
 }
 function remapArrayKey(arg0, arg1, arg2) {
+  if (!arg0 || typeof arg0 !== "object" || Array.isArray(arg0)) {
+    return;
+  }
   if (arg0[arg1] !== undefined && arg0[arg2] === undefined) {
     arg0[arg2] = Array.isArray(arg0[arg1]) ? arg0[arg1] : [arg0[arg1]];
     delete arg0[arg1];

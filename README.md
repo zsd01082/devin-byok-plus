@@ -30,7 +30,7 @@ Devin Desktop BYOK 增强版 — 多模型路由、双槽位、思考强度控�
 - 插件 ID：`devin-byok-plus`
 - 显示名：Devin BYOK Plus
 - 维护者 / Publisher：`jornlin`
-- 版本：2.1.1
+- 版本：2.1.2
 - 仓库：https://github.com/jornlin/devin-byok-plus
 
 ## 安装
@@ -207,7 +207,7 @@ OPENAI_THINKING_ENABLED=
 HYBRID_PORT=3006
 INFERENCE_PORT=3001
 ENABLE_COMPLETION_PROXY=true
-MAX_TOKENS=16384
+MAX_TOKENS=64000
 COMPLETION_TIMEOUT_MS=12000
 SYSTEM_PROMPT_OVERRIDE=
 SYSTEM_PROMPT_PATH=
@@ -431,4 +431,3 @@ pnpm run package
     <p>欢迎都来加入L站大家庭。 </p>
 
 </div>
-
