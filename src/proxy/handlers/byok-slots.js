@@ -1,6 +1,8 @@
 export const BYOK_SLOT_BY_REQUEST = {
   MODEL_CLAUDE_4_OPUS_BYOK: 1,
-  MODEL_CLAUDE_4_OPUS_THINKING_BYOK: 2
+  MODEL_CLAUDE_4_OPUS_THINKING_BYOK: 2,
+  MODEL_CLAUDE_4_SONNET_BYOK: 3,
+  MODEL_CLAUDE_4_SONNET_THINKING_BYOK: 4
 };
 
 export function getByokSlot(requestedModel) {
@@ -23,9 +25,18 @@ export const SLOT_CONFIG_FIELDS = [
   "OPENAI_API_HOST",
   "OPENAI_API_KEY",
   "OPENAI_API_PATH",
+  "OPENAI_SERVICE_TIER",
   "MODEL",
-  "THINKING_EFFORT"
+  "THINKING_EFFORT",
+  "PROTOCOL"
 ];
+
+const PROTOCOL_VALUES = ["", "anthropic", "openai", "gemini"];
+
+export function sanitizeSlotProtocol(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return PROTOCOL_VALUES.includes(normalized) ? normalized : "";
+}
 
 export const THINKING_EFFORT_LEVELS = ["", "low", "medium", "high", "xhigh", "max"];
 export const GEMINI_THINKING_LEVELS = ["", "minimal", "low", "medium", "high"];

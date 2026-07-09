@@ -5,6 +5,44 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.3.0] - 2026-07-04
+
+### Added
+- **OpenAI service_tier=fast 支持**（移植上游 v2.4.0）：各 BYOK 槽位支持独立配置 `OPENAI_SERVICE_TIER`（取值 `fast` 或空），启用 OpenAI 优先级通道（priority tier）。UI 层新增 "GPT Fast Mode" 下拉选项（仅在协议为 `openai/gpt` 时显示），配置通过 `.env` 持久化并支持热重载。模型名以 `-priority` 结尾时自动启用 fast 模式。三层回退机制：slot 级配置 → BYOK1 回退 → 全局 `OPENAI_SERVICE_TIER`。诊断报告集成 service tier 状态显示。
+- **手动协议选择**：BYOK 配置卡片新增 Protocol 下拉框（anthropic / openai / gemini），支持手动覆盖自动检测的 provider。协议变更时思考强度下拉和 GPT Fast Mode 行会联动显隐/重建选项，避免协议与参数不匹配。存储于 `BYOKn_PROTOCOL` 环境变量，空值时回退自动检测。扩展 `profileStore` 支持 protocol 字段持久化到 profiles.json。
+- **方案编辑器 UI 优化**：方案编辑器从嵌入式改为独立折叠卡片，默认隐藏以减少首屏信息密度。卡片标题栏显示当前激活方案名，支持点击展开/折叠。Tutorial 教程文案同步更新方案管理流程说明。
+
+### Changed
+- BYOK 配置卡片 Thinking Effort 行在手动协议下**总是显示**（之前仅按模型名自动判断）；协议切换时立即根据新协议重建思考强度选项列表。
+- `sidebarTemplate.js` 新增 `buildProtocolOptions()` 和 `buildOpenAIServiceTierOptions()` helper，统一下拉选项生成逻辑。
+- `profileStore.js` 的 `sanitizeProtocol()` 和 `detectModelProtocol()` 增强协议白名单校验与自动识别（anthropic/openai/gemini）。
+- `diagnostics.js` 的 `resolveDiagnosticModelRoute` 扩展支持 4 个 BYOK 槽位的 service tier 读取（BYOK1=Opus, BYOK2=Opus Thinking, BYOK3=Sonnet, BYOK4=Sonnet Thinking）。
+
+### Fixed
+- 修复协议手动切换后思考强度选项未联动更新的问题。
+- 修复 GPT Fast Mode 行在非 OpenAI 协议下仍显示的问题（现按 protocol 严格控制可见性）。
+
+## [2.2.0] - 2026-07-03
+
+### Added
+- **4 槽位 BYOK 扩展**：从 2 槽位扩展到 4 槽位，新增 Claude Sonnet 4 BYOK（#3）与 Claude Sonnet 4 Thinking BYOK（#4），支持更灵活的多模型配置。UI 层新增 BYOK #3/#4 配置卡片（紫色/琥珀色条纹），表单自动保存与槽位状态徽章完整支持 4 槽位。
+- **多渠道 Profile 系统**：引入配置方案（Profile）管理能力，支持创建/切换/重命名/复制/删除多套独立配置，每个方案管理 4 个 BYOK 槽位 + 高级配置，存储于 `~/.devin-byok-plus/profiles.json`（0o600 权限保护）。向后兼容：现有 2 槽位用户无感迁移，旧 profiles.json 自动补齐 byok3/byok4 字段；BYOK #3/#4 为可选扩展槽位，不强制配置。
+- **Prompt Cache / Token 优化**（移植上游 v2.3.0）：Anthropic 请求自动对 system / tools / 消息稳定前缀打 `cache_control` 断点并携带 `anthropic-beta: prompt-caching-2024-07-31` 头；网关不支持时自动标记能力并立即无缓存重试（不计入重试次数/熔断）。OpenAI/Gemini 路径按 name 稳定排序 tools、稳定请求前缀以提升隐式前缀缓存命中。新增环境变量 `PROMPT_CACHE_ENABLED` / `ANTHROPIC_PROMPT_CACHE` / `OPENAI_PROMPT_CACHE` / `PROMPT_CACHE_SORT_TOOLS` / `PROMPT_CACHE_TAIL_MESSAGES`。
+- **Token 用量日志**（移植上游 v2.3.0）：各 provider 流结束时输出统一 `📊` 日志（input/output/cached/creation/命中率/模式/路由/cache 状态），用于观测缓存效果与 token 消耗。
+- **上游地址覆盖**：`PROXY_API_HOST`（hybrid-server）与 `PROXY_INFERENCE_HOST`（inference-proxy）支持自定义上游 API 地址。
+
+### Changed
+- `EXPOSE_BACKEND_INFO` 默认值由 `true` 改为 `false`：system prompt 末尾追加的动态 backend 信息会破坏前缀缓存；如需恢复请显式设置 `EXPOSE_BACKEND_INFO=true`。
+- ws-bridge 运行时注入的消息现作为「易变尾部」处理，prompt cache 断点自动前移，内部标记发送上游前剥除。
+- `release.js` 脚本移除自动写入 CHANGELOG 功能，改为用户手动维护，避免重复追加条目。
+
+### Fixed
+- 修复 `config-hotreload.test.mjs` 中 oversized POST body 测试的请求体大小（20000→64001 字节，真正超过 64000 上限以正确触发 413 检查）。
+- 修复代理层 `models.js` 的 `/api/models` 端点 slot 参数解析（原仅接受 1/2，导致 BYOK #3/#4 "加载模型"按钮失效）。
+- 修复 `chat.js` 和 `diagnostics.js` 的 `MODEL_MAP` 缺失 Sonnet 4 BYOK 两个模型键，导致 Sonnet 4 请求无法路由。
+- 修复 `sidebarProvider.js` 的 `importExternalConfig` / `fetchModels` 处理器 slot 范围校验（原仅支持 1/2，扩展到 1-4）。
+- 修复 `profileStore.js` 的 `projectToEnvConfig` / `listProfiles` 对缺失槽位字段的防御性处理，避免旧数据访问 undefined 崩溃。
+
 ## [2.1.2] - 2026-06-28
 
 ### Fixed

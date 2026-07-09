@@ -26,7 +26,9 @@ import {
   getProviderConfig,
   getRuntimeConfig,
   getSlotModel,
+  getSlotProtocol,
   getSlotThinkingEffort,
+  getSlotServiceTier,
 } from './models.js';
 import {
   consumeInjectedMessages,
@@ -40,6 +42,14 @@ import {
   getGatewayCapability,
   markGatewayCapability,
 } from './gateway-capability.js';
+import {
+  applyAnthropicPromptCache,
+  getPromptCacheConfig,
+  prepareToolsForPromptCache,
+  shouldOptimizeOpenAIPrefix,
+  shouldRetryWithoutPromptCache,
+} from './prompt-cache.js';
+import { formatUsageLog } from './usage-log.js';
 import {
   isResponsesApiPath,
   shouldFallbackToChatCompletions,
@@ -64,6 +74,7 @@ export {
   synthesizeToolsFromMessages,
   collectToolUseNames,
   ensureNamedToolChoiceTool,
+  toInjectedTailMessage,
 };
 const keepAliveAgent = new https.Agent({
   keepAlive: true,
@@ -160,7 +171,8 @@ const ANTHROPIC_SSE_IDLE_TIMEOUT_MS = parseInt(
 );
 const OPENAI_REASONING_SUMMARY = process.env.OPENAI_REASONING_SUMMARY || 'auto';
 const OPENAI_ENABLE_REASONING = process.env.OPENAI_ENABLE_REASONING !== 'false';
-const EXPOSE_BACKEND_INFO = process.env.EXPOSE_BACKEND_INFO !== 'false';
+// 默认关闭：system prompt 末尾的动态 backend 行会破坏 OpenAI 前缀 cache（上游 2.3.0 行为）
+const EXPOSE_BACKEND_INFO = process.env.EXPOSE_BACKEND_INFO === 'true';
 const ANTHROPIC_FALLBACK_MODEL = 'claude-sonnet-4-20250514';
 const ANTHROPIC_FALLBACK_THINKING_MODEL = 'claude-sonnet-4-20250514-thinking';
 function createTimingTracker(arg0, tmp1 = {}, tmp2 = null) {
@@ -318,6 +330,8 @@ const tmp0 = {
   MODEL_CLAUDE_4_OPUS: '__DEFAULT__',
   MODEL_CLAUDE_4_OPUS_BYOK: '__DEFAULT__',
   MODEL_CLAUDE_4_OPUS_THINKING_BYOK: '__DEFAULT__',
+  MODEL_CLAUDE_4_SONNET_BYOK: '__DEFAULT__',
+  MODEL_CLAUDE_4_SONNET_THINKING_BYOK: '__DEFAULT__',
   MODEL_CLAUDE_OPUS_4: '__DEFAULT__',
   MODEL_CLAUDE_OPUS_4_1: '__DEFAULT__',
   MODEL_CLAUDE_SONNET_4: ANTHROPIC_FALLBACK_MODEL,
@@ -337,14 +351,24 @@ const tmp0 = {
   MODEL_CHAT: '__DEFAULT__',
 };
 const MODEL_MAP = tmp0;
-function getServiceTier(arg0) {
-  if (!arg0) {
-    return undefined;
-  }
-  if (arg0.endsWith('-priority')) {
+function getServiceTier(arg0, arg1 = '', arg2 = null) {
+  const tmp1 = String(arg0 || '').trim();
+  const tmp2 = String(arg1 || '').trim();
+  if (tmp1.endsWith('-priority') || tmp2.endsWith('-priority')) {
     return 'fast';
   }
-  return undefined;
+  const tmp3 = arg2 || getByokSlot(tmp1);
+  if (tmp3 === 1 || tmp3 === 2 || tmp3 === 3 || tmp3 === 4) {
+    const tmp4 = getSlotServiceTier(tmp3);
+    if (tmp4) {
+      return tmp4;
+    }
+    const tmp5 = getSlotModel(tmp3);
+    if (tmp5.endsWith('-priority')) {
+      return 'fast';
+    }
+  }
+  return getRuntimeConfig().openaiServiceTier || undefined;
 }
 function isOpenAIModel(arg0) {
   if (!arg0) {
@@ -384,8 +408,19 @@ function isClaudeModel(arg0) {
   const tmp1 = stripThinkingSuffix(arg0).toLowerCase();
   return tmp1.startsWith('claude-') || tmp1.startsWith('model_claude');
 }
+// 解析槽位有效协议：手动 BYOKn_PROTOCOL 优先，否则回退到模型名自动检测
+function resolveEffectiveProvider(model, slot, gptForced = false) {
+  const manual = slot ? getSlotProtocol(slot) : '';
+  if (manual === 'gemini') return 'gemini';
+  if (manual === 'openai') return 'gpt';
+  if (manual === 'anthropic') return 'claude';
+  if (isGeminiModel(model)) return 'gemini';
+  if (isOpenAIModel(model) || gptForced) return 'gpt';
+  if (isClaudeModel(model)) return 'claude';
+  return detectModelProvider(model) || 'claude';
+}
 function resolveSlotThinkingEffort(arg0, arg1) {
-  if (arg0 === 1 || arg0 === 2) {
+  if (arg0 === 1 || arg0 === 2 || arg0 === 3 || arg0 === 4) {
     return getSlotThinkingEffort(arg0) || (arg0 === 1 ? arg1.openaiReasoningEffort || '' : '');
   }
   return arg1.openaiReasoningEffort || '';
@@ -394,12 +429,13 @@ function buildThinkingOptions(arg0, arg1, tmp2 = null) {
   const tmp3 = getRuntimeConfig();
   const tmp4 = isThinkingModel(arg0);
   const tmp5 = resolveSlotThinkingEffort(tmp2, tmp3);
-  const tmp6 = isClaudeModel(arg0);
-  const tmp7 = isGeminiModel(arg0);
-  const tmp8 = isOpenAIModel(arg0);
+  const provider = resolveEffectiveProvider(arg0, tmp2, arg1);
+  const tmp6 = provider === 'claude';
+  const tmp7 = provider === 'gemini';
+  const tmp8 = provider === 'gpt';
   let tmp9 = false;
   let tmp10 = '';
-  if (arg1 || tmp8) {
+  if (tmp8) {
     tmp9 = tmp4 || tmp3.openaiThinkingEnabled === true || !!tmp5;
     tmp10 = tmp9 ? tmp5 || tmp3.openaiReasoningEffort || '' : '';
   } else if (tmp7) {
@@ -422,13 +458,7 @@ function buildThinkingOptions(arg0, arg1, tmp2 = null) {
             : thinkingEffortToGeminiBudget(tmp10)
           : thinkingEffortToAnthropicBudget(tmp10)) || (tmp7 ? 8192 : 10000)
       : 0,
-    provider: tmp7
-      ? 'gemini'
-      : tmp8 || arg1
-        ? 'gpt'
-        : tmp6
-          ? 'claude'
-          : detectModelProvider(arg0) || 'claude',
+    provider,
   };
   return tmp11;
 }
@@ -450,6 +480,12 @@ export function handleGetChatMessage(arg0, arg1, arg2) {
     if (tmp10 === 2) {
       tmp02 =
         'BYOK #2 model not configured. Please set BYOK2_MODEL in .env or configure via sidebar.';
+    } else if (tmp10 === 3) {
+      tmp02 =
+        'BYOK #3 model not configured. Please set BYOK3_MODEL in .env or configure via sidebar.';
+    } else if (tmp10 === 4) {
+      tmp02 =
+        'BYOK #4 model not configured. Please set BYOK4_MODEL in .env or configure via sidebar.';
     } else if (tmp10 === 1) {
       tmp02 = 'BYOK #1 model not configured. Please set BYOK1_MODEL or DEFAULT_MODEL in .env.';
     }
@@ -459,8 +495,9 @@ export function handleGetChatMessage(arg0, arg1, arg2) {
     return;
   }
   let tmp11 = resolveConfiguredModel(tmp7);
-  const tmp12 = isOpenAICompatibleModel(tmp11);
   const tmp13 = buildThinkingOptions(tmp11, isOpenAIModel(tmp11), tmp10);
+  // 使用 thinkingOptions.provider（尊重 BYOKn_PROTOCOL 手动覆盖）决定上游路由
+  const tmp12 = tmp13.provider === 'gpt' || tmp13.provider === 'gemini';
   tmp11 = stripThinkingSuffix(tmp11);
   if (!tmp11) {
     const tmp02 = '未解析到可用模型。请先在 Devin BYOK Bridge 中加载模型并选择默认模型。';
@@ -469,7 +506,7 @@ export function handleGetChatMessage(arg0, arg1, arg2) {
     return;
   }
   const tmp14 = getProviderConfig(tmp10);
-  const tmp15 = isGeminiModel(tmp11);
+  const tmp15 = tmp13.provider === 'gemini';
   const requiredKey = tmp12
     ? tmp15
       ? tmp14.openai.apiKey || tmp14.anthropic.apiKey
@@ -485,7 +522,7 @@ export function handleGetChatMessage(arg0, arg1, arg2) {
     arg1.end();
     return;
   }
-  const tmp16 = getServiceTier(tmp7);
+  const tmp16 = getServiceTier(tmp7, tmp11, tmp10);
   const tmp17 = tmp15 ? 'Gemini' : tmp12 ? 'OpenAI' : 'Anthropic';
   if (EXPOSE_BACKEND_INFO) {
     tmp3 += '\n\nCurrent backend: ' + tmp11 + ' (' + tmp17 + ').';
@@ -493,11 +530,8 @@ export function handleGetChatMessage(arg0, arg1, arg2) {
   const tmp18 = consumeInjectedMessages();
   if (tmp18.length > 0) {
     for (const tmp02 of tmp18) {
-      const tmp03 = {
-        role: tmp02.role,
-        content: tmp02.content,
-      };
-      tmp4.push(tmp03);
+      // 标记为易变尾部消息：prompt cache 的断点会放在这些消息之前
+      tmp4.push(toInjectedTailMessage(tmp02));
     }
     console.log('  📨 Injected ' + tmp18.length + ' message(s) from App');
   }
@@ -546,6 +580,12 @@ export function handleGetChatMessage(arg0, arg1, arg2) {
   };
   const tmp21 = createTimingTracker('chat', tmp20, tmp19);
   tmp21.mark('parsed', 'messages=' + tmp4.length + ' tools=' + (tmp5 ? tmp5.length : 0));
+  if (tmp5?.length) {
+    // 按 name 稳定排序 tools，稳定 JSON 前缀以提升 prompt cache 命中率
+    tmp5 = prepareToolsForPromptCache(tmp5, tmp17, {
+      config: getPromptCacheConfig(),
+    });
+  }
   if (tmp12) {
     const tmp02 = {
       systemPrompt: tmp3,
@@ -713,6 +753,92 @@ function shouldRetryWithoutGeminiThinking(arg0, arg1) {
     tmp1
   );
 }
+// 将 ws-bridge 运行时注入的消息标记为易变尾部（不参与 prompt cache 稳定前缀）
+function toInjectedTailMessage(arg0) {
+  return {
+    role: arg0.role,
+    content: arg0.content,
+    _volatileTail: true,
+  };
+}
+// 统计尾部连续的注入消息数，用于 prompt cache 断点前移
+function countInjectedTailMessages(messages = []) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return 0;
+  }
+  let count = 0;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?._volatileTail !== true) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+// 发送上游前剥除内部元数据字段（如 _volatileTail）
+function stripInternalMessageMetadata(messages = []) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return messages;
+  }
+  let changed = false;
+  const next = messages.map((message) => {
+    if (!message || typeof message !== 'object' || message._volatileTail !== true) {
+      return message;
+    }
+    changed = true;
+    const { _volatileTail, ...rest } = message;
+    return rest;
+  });
+  return changed ? next : messages;
+}
+// 根据 usage 与元信息推断本次请求的 cache 状态标签
+function toUsageCacheStatus(provider, usage, meta = {}) {
+  const normalizedProvider = String(provider || '')
+    .trim()
+    .toLowerCase();
+  if (normalizedProvider === 'anthropic') {
+    if (meta.promptCacheRejected) {
+      return 'unsupported';
+    }
+    if (meta.promptCacheEnabled === false) {
+      return 'off';
+    }
+    if (usage?.cache_read_input_tokens || usage?.cache_creation_input_tokens) {
+      return 'hit';
+    }
+    if (meta.promptCacheEnabled) {
+      return 'eligible';
+    }
+    return 'off';
+  }
+  if (usage?.cached_tokens || usage?.cache_read_input_tokens) {
+    return 'hit';
+  }
+  if (meta.cacheStatus === 'unsupported' || meta.cacheStatus === 'off') {
+    return meta.cacheStatus;
+  }
+  if (meta.openaiCacheMode === 'off') {
+    return 'off';
+  }
+  return meta.openaiCacheMode === 'auto' ? 'eligible' : 'observe';
+}
+// 流结束时输出统一的 📊 用量日志
+function logUpstreamUsage(processor, provider, meta = {}) {
+  if (!processor?.getUsage) {
+    return;
+  }
+  const usage = processor.getUsage();
+  if (!usage) {
+    return;
+  }
+  console.log(
+    '  ' +
+      formatUsageLog(usage, provider, {
+        ...meta,
+        cacheStatus: toUsageCacheStatus(provider, usage, meta),
+      })
+  );
+}
 function mapChatCompletionsToolChoice(arg0) {
   if (!arg0) {
     return undefined;
@@ -756,8 +882,9 @@ function buildOpenAIResponsesBody({
     tmp19.max_output_tokens = tmp20;
   }
   const tmp21 = tmp12?.thinkingEnabled === true;
+  const isGeminiRoute = tmp12?.provider === 'gemini' || (tmp12?.provider == null && isGeminiModel(tmp6));
   if (OPENAI_ENABLE_REASONING && tmp21) {
-    if (isGeminiModel(tmp6)) {
+    if (isGeminiRoute) {
       const tmp02 = buildGeminiThinkingPayload(tmp6, tmp12?.reasoningEffort);
       if (tmp02?.thinkingConfig) {
         const tmp03 = {};
@@ -831,8 +958,9 @@ export function buildOpenAIChatCompletionsBody({
     tmp19.max_tokens = tmp20;
   }
   const tmp21 = tmp12?.thinkingEnabled === true;
+  const isGeminiRoute = tmp12?.provider === 'gemini' || (tmp12?.provider == null && isGeminiModel(tmp6));
   if (OPENAI_ENABLE_REASONING && tmp21) {
-    if (isGeminiModel(tmp6)) {
+    if (isGeminiRoute) {
       if (!tmp18) {
         const tmp02 = buildGeminiThinkingPayload(tmp6, tmp12?.reasoningEffort);
         if (tmp02?.thinkingConfig) {
@@ -898,6 +1026,7 @@ function attachOpenAISseStream(
     onStreamEnd: fn,
     onDataReceived: onDataReceived = null,
     onSuccess: onSuccess = null,
+    usageMeta: usageMeta = {},
   }
 ) {
   const tmp1 = new StringDecoder('utf8');
@@ -925,6 +1054,18 @@ function attachOpenAISseStream(
       arg02.destroy();
     }, OPENAI_SSE_IDLE_TIMEOUT_MS);
   };
+  // 幂等收尾：避免 processPart(isDone) 与 'end' 双重 finalize/双重用量日志
+  let streamFinished = false;
+  const finishStream = (message) => {
+    if (streamFinished) {
+      return;
+    }
+    streamFinished = true;
+    tmp26 = true;
+    fn2();
+    logUpstreamUsage(tmp13, 'OpenAI', usageMeta);
+    tmp24.finalize(message);
+  };
   function processPart(arg03) {
     const tmp110 = parseOpenAISSEChunk(arg03 + '\n');
     for (const tmp02 of tmp110) {
@@ -934,9 +1075,7 @@ function attachOpenAISseStream(
       }
     }
     if (tmp13.isDone) {
-      tmp26 = true;
-      fn2();
-      tmp24.finalize('  ✅ OpenAI stream done (stop: ' + tmp13.stopReason + ')');
+      finishStream('  ✅ OpenAI stream done (stop: ' + tmp13.stopReason + ')');
     }
   }
   fn3();
@@ -976,7 +1115,7 @@ function attachOpenAISseStream(
     if (onSuccess && tmp13.isDone) {
       onSuccess();
     }
-    tmp24.finalize('  ✅ OpenAI stream ended (stop: ' + tmp13.stopReason + ')');
+    finishStream('  ✅ OpenAI stream ended (stop: ' + tmp13.stopReason + ')');
   });
   arg02.on('aborted', () => {
     tmp26 = true;
@@ -1103,16 +1242,35 @@ function streamAnthropic(
   retryCount = 0
 ) {
   const tmp12 = getProviderConfig(tmp11).anthropic;
+  // prompt cache 配置与网关能力检查（网关不支持 cache_control 时自动降级）
+  const promptCacheConfig = getPromptCacheConfig();
+  const promptCacheKey = buildGatewayCapabilityKey({
+    protocol: tmp12.useHttp ? 'http' : 'https',
+    host: tmp12.parsed.hostname,
+    port: tmp12.parsed.port !== 443 ? tmp12.parsed.port : tmp12.useHttp ? 80 : 443,
+    apiPath: tmp12.apiPath,
+    providerKind: 'anthropic',
+    slot: tmp11 || 'default',
+  });
+  const promptCacheCapability = getGatewayCapability(promptCacheKey);
+  const promptCacheEnabled =
+    promptCacheConfig.anthropic && !promptCacheCapability?.promptCacheUnsupported;
+  const promptCacheRejected = !!(
+    promptCacheConfig.anthropic && promptCacheCapability?.promptCacheUnsupported
+  );
   // 补齐工具定义：历史含 tool_use/tool_result 但本次未带 tools 时，合成占位定义以满足 Bedrock toolConfig 要求
   let effectiveTools = synthesizeToolsFromMessages(tmp3, tmp4);
   // 若 tool_choice 强制调用某命名工具但其定义缺失，补齐该工具定义并允许转发 tool_choice
   const { tools: ensuredTools, allowToolChoice } = ensureNamedToolChoiceTool(effectiveTools, tmp5);
-  effectiveTools = ensuredTools;
+  // 合成/补齐的占位工具也参与稳定排序，避免逐轮顺序变化破坏 tools 块缓存前缀
+  effectiveTools = prepareToolsForPromptCache(ensuredTools, 'anthropic', {
+    config: promptCacheConfig,
+  });
   const tmp13 = getForwardedToolChoice(effectiveTools, tmp5, 'Anthropic');
   const tmp14 = {
     model: tmp6,
     system: tmp2 || undefined,
-    messages: tmp3,
+    messages: stripInternalMessageMetadata(tmp3),
     stream: true,
     max_tokens: getMaxTokens(),
   };
@@ -1149,13 +1307,30 @@ function streamAnthropic(
         (tmp10?.reasoningEffort ? ' effort=' + tmp10.reasoningEffort : '')
     : 'off';
   console.log('  🧩 Anthropic/Sub2API thinking: ' + tmp15);
-  const tmp16 = JSON.stringify(tmp14);
-  if (retryCount === 0) {
+  // 启用时对 system/tools/messages 稳定前缀打 cache_control（注入消息作为易变尾部排除）
+  const outboundPayload = promptCacheEnabled
+    ? applyAnthropicPromptCache(tmp14, {
+        ...promptCacheConfig,
+        additionalTailMessages: countInjectedTailMessages(tmp3),
+      })
+    : tmp14;
+  const tmp16 = JSON.stringify(outboundPayload);
+  if (!arg1.headersSent) {
     arg1.writeHead(200, streamHeaders());
   }
   const processor = new AnthropicStreamProcessor(tmp7, tmp6, tmp9);
   let tmp17;
   const tmp18 = createStreamLifecycle(arg1, () => tmp17, 'Anthropic', tmp7, tmp8);
+  const logAnthropicUsage = () => {
+    logUpstreamUsage(processor, 'Anthropic', {
+      mode: 'messages',
+      route: tmp12.apiPath,
+      requestBytes: Buffer.byteLength(tmp16),
+      promptCacheEnabled,
+      promptCacheRejected,
+      fallback: promptCacheRejected ? 'no-cache-retry' : '',
+    });
+  };
   const tmp19 = tmp12.useHttp ? http : https;
   const tmp20 = tmp12.parsed.port !== 443 ? tmp12.parsed.port : tmp12.useHttp ? 80 : 443;
   const retryPrefix = retryCount > 0 ? `[Retry ${retryCount}] ` : '';
@@ -1168,7 +1343,8 @@ function streamAnthropic(
       ' model=' +
       tmp6 +
       ' key=' +
-      (tmp12.apiKey ? 'set' : 'empty')
+      (tmp12.apiKey ? 'set' : 'empty') +
+      (promptCacheEnabled ? ' cache=on' : ' cache=off')
   );
   if (tmp8) {
     tmp8.mark(
@@ -1199,6 +1375,7 @@ function streamAnthropic(
         'content-type': 'application/json',
         accept: 'text/event-stream',
         'anthropic-version': '2023-06-01',
+        ...(promptCacheEnabled ? { 'anthropic-beta': 'prompt-caching-2024-07-31' } : {}),
         'x-api-key': tmp12.apiKey,
         'content-length': Buffer.byteLength(tmp16),
         ...proxyHeaders(tmp6, Buffer.byteLength(tmp16)),
@@ -1217,6 +1394,39 @@ function streamAnthropic(
         arg02.on('end', () => {
           console.error('  ❌ Body: ' + sanitizeLogBody(tmp02));
           const tmp03 = buildProviderErrorMessage('Anthropic', arg02.statusCode, tmp02);
+
+          // 网关不支持 cache_control：标记能力后立即无缓存重试（不计入重试次数/熔断）
+          if (promptCacheEnabled && shouldRetryWithoutPromptCache(arg02.statusCode, tmp02)) {
+            markGatewayCapability(promptCacheKey, {
+              promptCacheUnsupported: true,
+              reason: 'prompt cache rejected: HTTP ' + arg02.statusCode,
+            });
+            console.log(
+              '  ↩️  Anthropic prompt cache unsupported — retrying without cache_control'
+            );
+            emitStreamStatus(
+              'retry',
+              'Anthropic prompt cache unsupported — retrying without cache_control'
+            );
+            streamAnthropic(
+              arg0,
+              arg1,
+              {
+                systemPrompt: tmp2,
+                messages: tmp3,
+                tools: tmp4,
+                toolChoice: tmp5,
+                resolvedModel: tmp6,
+                messageId: tmp7,
+                timing: tmp8,
+                monitorTargetId: tmp9,
+                thinkingOptions: tmp10,
+                byokSlot: tmp11,
+              },
+              retryCount
+            );
+            return;
+          }
 
           // 判断是否应该重试
           if (shouldRetryAnthropicRequest(arg02.statusCode, null, retryCount, hasReceivedData)) {
@@ -1318,9 +1528,11 @@ function streamAnthropic(
           for (const tmp03 of tmp02) {
             tmp18.safeWrite(wrapEnvelope(tmp03));
           }
+          logAnthropicUsage();
           tmp18.finalize('  ✅ Stream ended (forced stop)');
         } else if (processor.isDone) {
           circuitBreaker.recordSuccess(); // 成功请求，重置熔断器
+          logAnthropicUsage();
           tmp18.finalize('  ✅ Stream ended normally');
         }
       });
@@ -1488,8 +1700,9 @@ function streamOpenAI(
   };
   const tmp31 = buildOpenAIResponsesBody(tmp30);
   const tmp32 = buildOpenAIChatCompletionsBody(tmp30);
+  const isGeminiRoute = tmp12?.provider === 'gemini' || (tmp12?.provider == null && isGeminiModel(tmp6));
   const tmp36 =
-    isGeminiModel(tmp6) && tmp12?.thinkingEnabled === true
+    isGeminiRoute && tmp12?.thinkingEnabled === true
       ? buildOpenAIChatCompletionsBody({
           ...tmp30,
           omitGeminiThinking: true,
@@ -1497,7 +1710,7 @@ function streamOpenAI(
       : null;
   console.log(
     '  🧩 OpenAI/Sub2API reasoning: ' +
-      (isGeminiModel(tmp6)
+      (isGeminiRoute
         ? tmp31.thinking_config
           ? usesGeminiThinkingLevel(tmp6)
             ? 'gemini level=' + (tmp31.thinking_config.thinking_level || '?')
@@ -1530,10 +1743,21 @@ function streamOpenAI(
     host: tmp14.parsed.hostname,
     port: tmp38,
     apiPath: tmp14.apiPath || '/v1/responses',
-    providerKind: isGeminiModel(tmp6) ? 'gemini' : 'openai',
+    providerKind: isGeminiRoute ? 'gemini' : 'openai',
     slot: tmp13 || 'default',
   });
   const tmp40 = getGatewayCapability(tmp39);
+  // OpenAI 路径 prompt cache 元信息（observe/auto/off），随每个 attempt 传递到用量日志
+  const promptCacheConfig = getPromptCacheConfig();
+  const openaiPrefixOptimized = shouldOptimizeOpenAIPrefix({ config: promptCacheConfig });
+  const openaiCacheMode = promptCacheConfig.openaiMode;
+  const buildOpenAIUsageMeta = (mode, route, fallback = '') => ({
+    mode,
+    route,
+    openaiCacheMode,
+    cacheStatus: openaiPrefixOptimized ? openaiCacheMode : 'off',
+    ...(fallback ? { fallback } : {}),
+  });
   if (isResponsesApiPath(tmp14.apiPath) && tmp40?.preferChatCompletions) {
     console.log(
       '  ↩️  using cached chat-completions for ' +
@@ -1547,6 +1771,11 @@ function streamOpenAI(
       body: tmp32,
       mode: 'chat',
       cacheKey: tmp39,
+      usageMeta: buildOpenAIUsageMeta(
+        'chat',
+        toChatCompletionsPath(tmp14.apiPath),
+        'responses-already-disabled'
+      ),
     });
     if (tmp36) {
       tmp33.push({
@@ -1555,6 +1784,11 @@ function streamOpenAI(
         mode: 'chat',
         withoutGeminiThinking: true,
         cacheKey: tmp39,
+        usageMeta: buildOpenAIUsageMeta(
+          'chat',
+          toChatCompletionsPath(tmp14.apiPath),
+          'omit-gemini-thinking'
+        ),
       });
     }
   } else if (isResponsesApiPath(tmp14.apiPath)) {
@@ -1563,12 +1797,18 @@ function streamOpenAI(
       body: tmp31,
       mode: 'responses',
       cacheKey: tmp39,
+      usageMeta: buildOpenAIUsageMeta('responses', tmp14.apiPath),
     });
     tmp33.push({
       path: toChatCompletionsPath(tmp14.apiPath),
       body: tmp32,
       mode: 'chat',
       cacheKey: tmp39,
+      usageMeta: buildOpenAIUsageMeta(
+        'chat',
+        toChatCompletionsPath(tmp14.apiPath),
+        'responses-to-chat'
+      ),
     });
     if (tmp36) {
       tmp33.push({
@@ -1577,6 +1817,11 @@ function streamOpenAI(
         mode: 'chat',
         withoutGeminiThinking: true,
         cacheKey: tmp39,
+        usageMeta: buildOpenAIUsageMeta(
+          'chat',
+          toChatCompletionsPath(tmp14.apiPath),
+          'omit-gemini-thinking'
+        ),
       });
     }
   } else {
@@ -1589,6 +1834,7 @@ function streamOpenAI(
       body: tmp32,
       mode: 'chat',
       cacheKey: tmp39,
+      usageMeta: buildOpenAIUsageMeta('chat', tmp14.apiPath || '/v1/chat/completions'),
     });
     if (tmp36) {
       tmp33.push({
@@ -1597,6 +1843,11 @@ function streamOpenAI(
         mode: 'chat',
         withoutGeminiThinking: true,
         cacheKey: tmp39,
+        usageMeta: buildOpenAIUsageMeta(
+          'chat',
+          tmp14.apiPath || '/v1/chat/completions',
+          'omit-gemini-thinking'
+        ),
       });
     }
   }
@@ -1653,6 +1904,7 @@ function streamOpenAI(
       processor.setAllowedTools(tmp4.map((arg02) => arg02.name));
     }
     const tmp03 = JSON.stringify(tmp02.body);
+    const attemptUsageMeta = tmp02.usageMeta || buildOpenAIUsageMeta(tmp02.mode, tmp02.path);
     const retryPrefix = retryCount > 0 ? `[Retry ${retryCount}] ` : '';
     console.log(
       '  → ' +
@@ -1667,7 +1919,11 @@ function streamOpenAI(
         ' model=' +
         tmp6 +
         ' key=' +
-        tmp29
+        tmp29 +
+        ' cache=' +
+        attemptUsageMeta.cacheStatus +
+        ' mode=' +
+        attemptUsageMeta.mode
     );
     if (tmp10) {
       const markName =
@@ -1678,7 +1934,14 @@ function streamOpenAI(
             : 'upstream_fallback_start';
       tmp10.mark(
         markName,
-        'bytes=' + Buffer.byteLength(tmp03) + ' tools=' + (tmp16 && tmp4 ? tmp4.length : 0)
+        'bytes=' +
+          Buffer.byteLength(tmp03) +
+          ' tools=' +
+          (tmp16 && tmp4 ? tmp4.length : 0) +
+          ' cache=' +
+          attemptUsageMeta.cacheStatus +
+          ' mode=' +
+          attemptUsageMeta.mode
       );
     }
 
@@ -1785,6 +2048,10 @@ function streamOpenAI(
           },
           onSuccess: () => {
             circuitBreaker.recordSuccess();
+          },
+          usageMeta: {
+            ...attemptUsageMeta,
+            requestBytes: Buffer.byteLength(tmp03),
           },
         });
       }

@@ -13,14 +13,24 @@
       options: Array.isArray(tmp3.cachedModelOptions2) ? tmp3.cachedModelOptions2 : [],
       selected: typeof tmp3.lastSelectedModel2 === "string" ? tmp3.lastSelectedModel2 : "",
       apiKey: typeof tmp3.cachedModelApiKey2 === "string" ? tmp3.cachedModelApiKey2 : ""
+    },
+    3: {
+      options: Array.isArray(tmp3.cachedModelOptions3) ? tmp3.cachedModelOptions3 : [],
+      selected: typeof tmp3.lastSelectedModel3 === "string" ? tmp3.lastSelectedModel3 : "",
+      apiKey: typeof tmp3.cachedModelApiKey3 === "string" ? tmp3.cachedModelApiKey3 : ""
+    },
+    4: {
+      options: Array.isArray(tmp3.cachedModelOptions4) ? tmp3.cachedModelOptions4 : [],
+      selected: typeof tmp3.lastSelectedModel4 === "string" ? tmp3.lastSelectedModel4 : "",
+      apiKey: typeof tmp3.cachedModelApiKey4 === "string" ? tmp3.cachedModelApiKey4 : ""
     }
   });
   function fn2(arg0) {
-    return arg0 === 2 ? 2 : 1;
+    return arg0 === 2 ? 2 : arg0 === 3 ? 3 : arg0 === 4 ? 4 : 1;
   }
   function fn3(arg0) {
     const tmp12 = fn();
-    if (arg0 === 1 || arg0 === 2) {
+    if (arg0 === 1 || arg0 === 2 || arg0 === 3 || arg0 === 4) {
       tmp3 = {
         ...tmp3,
         ["cachedModelOptions" + arg0]: tmp12[arg0].options,
@@ -35,7 +45,13 @@
         cachedModelApiKey1: tmp12[1].apiKey,
         cachedModelOptions2: tmp12[2].options,
         lastSelectedModel2: tmp12[2].selected,
-        cachedModelApiKey2: tmp12[2].apiKey
+        cachedModelApiKey2: tmp12[2].apiKey,
+        cachedModelOptions3: tmp12[3].options,
+        lastSelectedModel3: tmp12[3].selected,
+        cachedModelApiKey3: tmp12[3].apiKey,
+        cachedModelOptions4: tmp12[4].options,
+        lastSelectedModel4: tmp12[4].selected,
+        cachedModelApiKey4: tmp12[4].apiKey
       };
     }
     tmp0.setState(tmp3);
@@ -216,19 +232,41 @@
     const tmp32 = tmp20[arg0] || tmp20.claude;
     return tmp32.some(([tmp02]) => tmp02 === tmp22) ? tmp22 : "";
   }
+  // 读取槽位手动协议下拉框的值：anthropic / openai / gemini / ""
+  function fn19a(arg0) {
+    const tmp32 = fn2(arg0);
+    const el = fn4("cfgByok" + tmp32 + "Protocol");
+    return el ? String(el.value || "").toLowerCase() : "";
+  }
+  // 协议 -> thinking provider 映射
+  function fn19b(protocol) {
+    if (protocol === "anthropic") return "claude";
+    if (protocol === "openai") return "gpt";
+    if (protocol === "gemini") return "gemini";
+    return null;
+  }
   function fn19(arg0, arg1, arg2) {
     const tmp32 = fn2(arg0);
     const tmp4 = fn4("cfgByok" + tmp32 + "ThinkingEffortRow");
     const tmp5 = fn4("cfgByok" + tmp32 + "ThinkingEffort");
     const tmp6 = fn4("cfgByok" + tmp32 + "ThinkingLabel");
-    const tmp7 = fn15(arg1);
+    // 手动协议优先于自动检测
+    const manual = fn19b(fn19a(arg0));
+    const tmp7 = manual || fn15(arg1);
+    // 手动协议下总是显示思考深度行；否则按模型能力判定
+    const visible = manual ? !!tmp7 : fn17(tmp7, arg1);
     if (tmp4) {
-      tmp4.classList.toggle("hidden", !fn17(tmp7, arg1));
+      tmp4.classList.toggle("hidden", !visible);
     }
     if (tmp6) {
       tmp6.textContent = fn16(tmp7);
     }
-    if (!tmp5 || !fn17(tmp7, arg1)) {
+    // GPT Fast Mode 行：只在 provider=gpt 时显示
+    const tmpST = fn4("cfgByok" + tmp32 + "ServiceTierRow");
+    if (tmpST) {
+      tmpST.classList.toggle("hidden", tmp7 !== "gpt");
+    }
+    if (!tmp5 || !visible) {
       return;
     }
     const tmp8 = fn18(tmp7, arg2 !== undefined ? arg2 : tmp5.value);
@@ -237,7 +275,7 @@
     tmp5.value = tmp8;
   }
   function fn20() {
-    [1, 2].forEach(arg0 => {
+    [1, 2, 3, 4].forEach(arg0 => {
       const tmp12 = fn2(arg0);
       const tmp22 = fn4("cfgByok" + tmp12 + "Model");
       const tmp32 = tmp22 && tmp22.value || "";
@@ -270,7 +308,9 @@
     const tmp6 = arg0[tmp32 + "MODEL"] || (tmp22 === 1 ? arg0.DEFAULT_MODEL || "" : "");
     fn13("cfgByok" + tmp22 + "Host", tmp4);
     fn13("cfgByok" + tmp22 + "Key", tmp5);
+    fn13("cfgByok" + tmp22 + "Protocol", String(arg0[tmp32 + "PROTOCOL"] || "").toLowerCase());
     fn13("cfgByok" + tmp22 + "ThinkingEffort", arg0[tmp32 + "THINKING_EFFORT"] || (tmp22 === 1 ? arg0.OPENAI_REASONING_EFFORT || "" : ""));
+    fn13("cfgByok" + tmp22 + "ServiceTier", arg0[tmp32 + "OPENAI_SERVICE_TIER"] || (tmp22 === 1 ? arg0.OPENAI_SERVICE_TIER || "" : ""));
     fn19(arg1, tmp6, arg0[tmp32 + "THINKING_EFFORT"] || (tmp22 === 1 ? arg0.OPENAI_REASONING_EFFORT || "" : ""));
     const tmp7 = fn11(tmp22);
     const tmp8 = fn();
@@ -294,6 +334,8 @@
     if (arg0) {
       fn23(arg0, 1);
       fn23(arg0, 2);
+      fn23(arg0, 3);
+      fn23(arg0, 4);
       fn13("cfgAnthropicPath", arg0.BYOK1_ANTHROPIC_API_PATH || arg0.ANTHROPIC_API_PATH || "");
       fn13("cfgOpenaiPath", arg0.BYOK1_OPENAI_API_PATH || arg0.OPENAI_API_PATH || "");
       fn13("cfgMaxTokens", arg0.MAX_TOKENS || "64000");
@@ -339,6 +381,131 @@
       tmp8[1].appendChild(tmp22);
     }
   }
+  // ========== 配置方案列表 ==========
+  let profilesState = { profiles: [], activeId: "", editingId: "" };
+
+  // 协议 label：anthropic/openai/gemini → 简称
+  function protocolShortLabel(p) {
+    const v = String(p || "").toLowerCase();
+    if (v === "anthropic") return "Anthropic";
+    if (v === "openai") return "OpenAI";
+    if (v === "gemini") return "Gemini";
+    return "";
+  }
+  // 思考深度显示：空 → "-"
+  function thinkingEffortShort(v) {
+    const s = String(v || "").trim().toLowerCase();
+    return s || "-";
+  }
+  // 构造某槽位摘要（弱化显示）；未配置返回空串
+  function buildSlotSummary(p, slotIdx) {
+    const configured = p["byok" + slotIdx + "Configured"];
+    if (!configured) return "";
+    const proto = protocolShortLabel(p["byok" + slotIdx + "Protocol"]) || "未识别";
+    const manual = String(p["byok" + slotIdx + "ProtocolManual"] || "");
+    const protoBadge = manual ? proto + " · 手动" : proto;
+    const model = p["byok" + slotIdx + "Model"] || "-";
+    const thinking = thinkingEffortShort(p["byok" + slotIdx + "ThinkingEffort"]);
+    // hover 完整值：截断行仍能看到全模型名
+    const titleText = "#" + slotIdx + " · " + protoBadge + " · " + model + " · 思考：" + thinking;
+    return (
+      '<div class="profile-slot-line" title="' + fn6(titleText) + '">' +
+      '<span class="profile-slot-tag">#' + slotIdx + '</span>' +
+      '<span class="profile-slot-proto">' + fn6(protoBadge) + '</span>' +
+      '<span class="profile-slot-sep">·</span>' +
+      '<span class="profile-slot-model">' + fn6(model) + '</span>' +
+      '<span class="profile-slot-sep">·</span>' +
+      '<span class="profile-slot-thinking">思考：' + fn6(thinking) + '</span>' +
+      '</div>'
+    );
+  }
+
+  function renderProfileList(state) {
+    if (state) {
+      profilesState = {
+        profiles: Array.isArray(state.profiles) ? state.profiles : [],
+        activeId: state.activeId || "",
+        editingId: state.editingId || state.activeId || "",
+      };
+    }
+    const container = fn4("profileList");
+    if (!container) {
+      return;
+    }
+    const items = profilesState.profiles.map((p) => {
+      const isActive = p.id === profilesState.activeId;
+      const isEditing = p.id === profilesState.editingId;
+      const cls = ["profile-item"];
+      if (isActive) cls.push("active");
+      if (isEditing && !isActive) cls.push("editing");
+      const model = p.byok1Model || "未选择模型";
+      const host = p.byok1Display || "";
+      const desc = fn6(host) + " · " + fn6(model);
+      const configured = p.byok1Configured && p.byok2Configured;
+      const statusBadge = isActive
+        ? '<span class="badge badge-info">使用中</span>'
+        : configured
+          ? '<button type="button" class="btn btn-s sm" data-ws-action="activateProfile" data-profile-id="' + fn6(p.id) + '">启 用</button>'
+          : '<span class="badge badge-warn">未配齐</span>';
+      // 每槽位摘要（协议/模型/思考深度）—— 仅显示已配置槽位
+      const summaryLines = [1, 2, 3, 4].map((n) => buildSlotSummary(p, n)).filter(Boolean).join("");
+      const summaryBlock = summaryLines ? '<div class="profile-slots">' + summaryLines + '</div>' : "";
+      return (
+        '<div class="profile-item ' + cls.slice(1).join(" ") + '" data-profile-id="' + fn6(p.id) + '" data-ws-action="editProfile">' +
+        '<span class="profile-radio"></span>' +
+        '<div class="profile-meta">' +
+        '<div class="profile-name">' + fn6(p.name) + '</div>' +
+        '<div class="profile-desc">' + desc + '</div>' +
+        summaryBlock +
+        '</div>' +
+        '<div class="profile-actions">' +
+        '<button type="button" class="profile-action-btn" data-ws-action="renameProfile" data-profile-id="' + fn6(p.id) + '" title="重命名">✎</button>' +
+        '<button type="button" class="profile-action-btn" data-ws-action="duplicateProfile" data-profile-id="' + fn6(p.id) + '" title="复制">⧉</button>' +
+        '<button type="button" class="profile-action-btn" data-ws-action="deleteProfile" data-profile-id="' + fn6(p.id) + '" title="删除">🗑</button>' +
+        '</div>' +
+        '<div class="profile-status">' + statusBadge + '</div>' +
+        '</div>'
+      );
+    });
+    container.innerHTML = items.join("");
+  }
+
+  // 当前编辑中的 profile 状态
+  let currentEditingProfile = null;
+
+  function showProfileEditor(profileId, profileName, isActive, config) {
+    currentEditingProfile = { profileId, profileName, isActive };
+    const card = fn4("profileEditorCard");
+    const nameInput = fn4("cfgProfileName");
+    const badge = fn4("profileEditorBadge");
+    if (card) card.classList.remove("hidden");
+    if (nameInput) nameInput.value = profileName || "";
+    if (badge) {
+      badge.textContent = isActive ? "使用中" : "未启用";
+      badge.className = isActive ? "badge badge-info" : "badge badge-warn";
+    }
+    // 水合配置到表单
+    if (config) {
+      fn23(config, 1);
+      fn23(config, 2);
+      fn23(config, 3);
+      fn23(config, 4);
+      fn13("cfgAnthropicPath", config.BYOK1_ANTHROPIC_API_PATH || config.ANTHROPIC_API_PATH || "");
+      fn13("cfgOpenaiPath", config.BYOK1_OPENAI_API_PATH || config.OPENAI_API_PATH || "");
+      fn13("cfgMaxTokens", config.MAX_TOKENS || "64000");
+      fn13("cfgCompletionTimeoutMs", config.COMPLETION_TIMEOUT_MS || "12000");
+      fn13("cfgHybridPort", config.HYBRID_PORT || "3006");
+      fn13("cfgInferencePort", config.INFERENCE_PORT || "3001");
+      fn20();
+    }
+  }
+
+  function hideProfileEditor() {
+    currentEditingProfile = null;
+    const card = fn4("profileEditorCard");
+    if (card) card.classList.add("hidden");
+  }
+
   function fn25(arg0, arg1, arg2) {
     if (!arg0) {
       return;
@@ -402,22 +569,29 @@
       [tmp6 + "OPENAI_API_HOST"]: tmp32,
       [tmp6 + "OPENAI_API_KEY"]: tmp22,
       [tmp6 + "OPENAI_API_PATH"]: (fn4("cfgOpenaiPath") || {}).value || "",
+      [tmp6 + "OPENAI_SERVICE_TIER"]: ((fn4("cfgByok" + tmp12 + "ServiceTier") || {}).value || "").trim(),
       [tmp6 + "MODEL"]: tmp5,
-      [tmp6 + "THINKING_EFFORT"]: ((fn4("cfgByok" + tmp12 + "ThinkingEffort") || {}).value || "").trim()
+      [tmp6 + "THINKING_EFFORT"]: ((fn4("cfgByok" + tmp12 + "ThinkingEffort") || {}).value || "").trim(),
+      [tmp6 + "PROTOCOL"]: fn19a(tmp12)
     };
   }
   function fn27() {
     const tmp02 = fn26(1);
     const tmp12 = fn26(2);
+    const tmp22b = fn26(3);
+    const tmp32b = fn26(4);
     return {
       ...tmp02,
       ...tmp12,
+      ...tmp22b,
+      ...tmp32b,
       ANTHROPIC_API_HOST: tmp02.BYOK1_ANTHROPIC_API_HOST,
       ANTHROPIC_API_KEY: tmp02.BYOK1_ANTHROPIC_API_KEY,
       ANTHROPIC_API_PATH: tmp02.BYOK1_ANTHROPIC_API_PATH,
       OPENAI_API_HOST: tmp02.BYOK1_OPENAI_API_HOST,
       OPENAI_API_KEY: tmp02.BYOK1_OPENAI_API_KEY,
       OPENAI_API_PATH: tmp02.BYOK1_OPENAI_API_PATH,
+      OPENAI_SERVICE_TIER: tmp02.BYOK1_OPENAI_SERVICE_TIER || "",
       DEFAULT_MODEL: tmp02.BYOK1_MODEL,
       MAX_TOKENS: (fn4("cfgMaxTokens") || {}).value || "64000",
       COMPLETION_TIMEOUT_MS: (fn4("cfgCompletionTimeoutMs") || {}).value || "12000",
@@ -726,6 +900,49 @@
       fn5("saveConfig", {
         config: fn27()
       });
+    } else if (tmp32 === "saveProfileEditor") {
+      if (!currentEditingProfile) return;
+      fn7("config", "busy", "正在应用到方案...");
+      const nameInput = fn4("cfgProfileName");
+      fn5("saveConfig", {
+        config: fn27(),
+        profileName: nameInput ? nameInput.value.trim() : "",
+        silent: false
+      });
+    } else if (tmp32 === "closeProfileEditor") {
+      hideProfileEditor();
+      fn5("closeProfileEditor");
+    } else if (tmp32 === "resetProfileEditor") {
+      if (!currentEditingProfile) return;
+      fn5("resetProfileEditor", { profileId: currentEditingProfile.profileId });
+    } else if (tmp32 === "createProfile") {
+      fn5("createProfile", { config: fn27() });
+    } else if (tmp32 === "activateProfile") {
+      const pid = tmp22.getAttribute("data-profile-id");
+      if (pid) {
+        fn7("config", "busy", "正在切换方案...");
+        fn5("activateProfile", { profileId: pid });
+      }
+    } else if (tmp32 === "editProfile") {
+      const pid = tmp22.getAttribute("data-profile-id");
+      if (pid) {
+        fn5("editProfile", { profileId: pid });
+      }
+    } else if (tmp32 === "renameProfile") {
+      const pid = tmp22.getAttribute("data-profile-id");
+      if (pid) {
+        fn5("renameProfile", { profileId: pid });
+      }
+    } else if (tmp32 === "duplicateProfile") {
+      const pid = tmp22.getAttribute("data-profile-id");
+      if (pid) {
+        fn5("duplicateProfile", { profileId: pid });
+      }
+    } else if (tmp32 === "deleteProfile") {
+      const pid = tmp22.getAttribute("data-profile-id");
+      if (pid) {
+        fn5("deleteProfile", { profileId: pid });
+      }
     } else if (tmp32 === "maintenanceTools") {
       fn7("config", "busy", "请选择维护操作...");
       fn5("maintenanceTools");
@@ -856,22 +1073,27 @@
       fn5("setAutoStartProxy", {
         value: tmp12.checked === true
       });
-    } else if (tmp12.id === "cfgByok1Model" || tmp12.id === "cfgByok2Model" || tmp12.id === "cfgByok1ThinkingEffort" || tmp12.id === "cfgByok2ThinkingEffort") {
-      const tmp02 = /cfgByok2/.test(tmp12.id) ? 2 : 1;
+    } else if (tmp12.id === "cfgByok1Model" || tmp12.id === "cfgByok2Model" || tmp12.id === "cfgByok3Model" || tmp12.id === "cfgByok4Model" || tmp12.id === "cfgByok1ThinkingEffort" || tmp12.id === "cfgByok2ThinkingEffort" || tmp12.id === "cfgByok3ThinkingEffort" || tmp12.id === "cfgByok4ThinkingEffort" || tmp12.id === "cfgByok1Protocol" || tmp12.id === "cfgByok2Protocol" || tmp12.id === "cfgByok3Protocol" || tmp12.id === "cfgByok4Protocol" || tmp12.id === "cfgByok1ServiceTier" || tmp12.id === "cfgByok2ServiceTier" || tmp12.id === "cfgByok3ServiceTier" || tmp12.id === "cfgByok4ServiceTier") {
+      const tmp02 = /cfgByok2/.test(tmp12.id) ? 2 : /cfgByok3/.test(tmp12.id) ? 3 : /cfgByok4/.test(tmp12.id) ? 4 : 1;
       if (tmp12.id.endsWith("Model")) {
         tmp3["lastSelectedModel" + tmp02] = tmp12.value || "";
         fn3(tmp02);
       }
+      // 手动协议变更时，立即根据新协议重建思考深度下拉
+      if (tmp12.id.endsWith("Protocol")) {
+        const modelEl = fn4("cfgByok" + tmp02 + "Model");
+        fn19(tmp02, (modelEl || {}).value || "");
+      }
       fn20();
-    } else if (tmp12.id === "cfgByok1Host" || tmp12.id === "cfgByok2Host") {
-      fn9("Base URL 已修改，请重新加载模型", tmp12.id === "cfgByok2Host" ? 2 : 1);
-    } else if (tmp12.id === "cfgByok1Key" || tmp12.id === "cfgByok2Key") {
-      fn9("API Key 已修改，请重新加载模型", tmp12.id === "cfgByok2Key" ? 2 : 1);
+    } else if (tmp12.id === "cfgByok1Host" || tmp12.id === "cfgByok2Host" || tmp12.id === "cfgByok3Host" || tmp12.id === "cfgByok4Host") {
+      fn9("Base URL 已修改，请重新加载模型", tmp12.id === "cfgByok2Host" ? 2 : tmp12.id === "cfgByok3Host" ? 3 : tmp12.id === "cfgByok4Host" ? 4 : 1);
+    } else if (tmp12.id === "cfgByok1Key" || tmp12.id === "cfgByok2Key" || tmp12.id === "cfgByok3Key" || tmp12.id === "cfgByok4Key") {
+      fn9("API Key 已修改，请重新加载模型", tmp12.id === "cfgByok2Key" ? 2 : tmp12.id === "cfgByok3Key" ? 3 : tmp12.id === "cfgByok4Key" ? 4 : 1);
     }
   });
   document.addEventListener("input", arg0 => {
     const tmp12 = arg0.target;
-    if (tmp12 && (tmp12.id === "cfgDefaultModelCustom" || /cfgByok[12]Model/.test(tmp12.id))) {
+    if (tmp12 && (tmp12.id === "cfgDefaultModelCustom" || /cfgByok[1234]Model/.test(tmp12.id))) {
       fn20();
     }
   });
@@ -881,6 +1103,10 @@
       fn35(tmp12.proxy);
       fn24(tmp12.config, tmp12.proxy);
       fn12(tmp12.patch);
+    } else if (tmp12.type === "profileList") {
+      renderProfileList(tmp12);
+    } else if (tmp12.type === "openProfileEditor") {
+      showProfileEditor(tmp12.profileId, tmp12.profileName, tmp12.isActive, tmp12.config);
     } else if (tmp12.type === "actionState" && tmp12.section) {
       fn7(tmp12.section, tmp12.state === "error" ? "error" : "success", tmp12.message || "完成");
     } else if (tmp12.type === "modelList") {
@@ -900,6 +1126,10 @@
       }
       if (tmp12.thinkingEffort) {
         fn13("cfgByok" + tmp02 + "ThinkingEffort", tmp12.thinkingEffort);
+      }
+      // 导入外部配置时同步手动协议（Claude→anthropic / Codex→openai）
+      if (typeof tmp12.protocol === "string") {
+        fn13("cfgByok" + tmp02 + "Protocol", String(tmp12.protocol || "").toLowerCase());
       }
       const tmp13 = fn4("cfgByok" + tmp02 + "Model");
       if (tmp12.model && tmp13) {
@@ -941,11 +1171,52 @@
       const tmp13 = /GetChatMessage|GetStreamingCompletions|GetEmbeddings/.test(tmp12.line) ? " hi" : /err|stderr/i.test(tmp12.line) ? " err" : "";
       tmp02.innerHTML += "<div class=\"log-line" + tmp13 + "\">" + fn6(tmp12.line) + "</div>";
       tmp02.scrollTop = tmp02.scrollHeight;
+    } else if (tmp12.type === "versionUpdate" || (tmp12.type === "status" && tmp12.versionUpdate)) {
+      const updateInfo = tmp12.versionUpdate || tmp12.versionUpdate;
+      if (updateInfo && updateInfo.hasUpdate) {
+        showVersionUpdateBanner(updateInfo);
+      } else {
+        hideVersionUpdateBanner();
+      }
     }
   });
+
+  // ========== 版本更新提示功能 ==========
+  function showVersionUpdateBanner(updateInfo) {
+    const banner = fn4("versionUpdateBanner");
+    const textEl = fn4("versionUpdateText");
+    if (!banner || !textEl) return;
+
+    textEl.innerHTML = "v" + fn6(updateInfo.currentVersion) + " → <span class=\"version-tag\">v" + fn6(updateInfo.latestVersion) + "</span>";
+    banner.classList.remove("hidden");
+  }
+
+  function hideVersionUpdateBanner() {
+    const banner = fn4("versionUpdateBanner");
+    if (banner) {
+      banner.classList.add("hidden");
+    }
+  }
+
+  const btnOpenRelease = fn4("btnOpenRelease");
+  if (btnOpenRelease) {
+    btnOpenRelease.addEventListener("click", () => {
+      fn5("openReleaseUrl");
+    });
+  }
+
+  const btnDismissUpdate = fn4("btnDismissUpdate");
+  if (btnDismissUpdate) {
+    btnDismissUpdate.addEventListener("click", () => {
+      fn5("dismissVersionUpdate");
+      hideVersionUpdateBanner();
+    });
+  }
+  // ========== 版本更新提示功能结束 ==========
   fn24a();
   fn5("getStatus");
-  [1, 2].forEach(arg0 => {
+  fn5("getProfiles");
+  [1, 2, 3, 4].forEach(arg0 => {
     const tmp12 = fn();
     const tmp22 = fn11(arg0);
     const tmp32 = fn4("cfgByok" + arg0 + "Model");
@@ -962,8 +1233,11 @@
   // ========== 静默自动保存功能 ==========
   // 配置字段白名单（需要自动保存的字段）
   const AUTO_SAVE_FIELDS = new Set([
-    'cfgByok1Host', 'cfgByok1Key', 'cfgByok1Model', 'cfgByok1ThinkingEffort',
-    'cfgByok2Host', 'cfgByok2Key', 'cfgByok2Model', 'cfgByok2ThinkingEffort',
+    'cfgProfileName',
+    'cfgByok1Host', 'cfgByok1Key', 'cfgByok1Model', 'cfgByok1ThinkingEffort', 'cfgByok1Protocol', 'cfgByok1ServiceTier',
+    'cfgByok2Host', 'cfgByok2Key', 'cfgByok2Model', 'cfgByok2ThinkingEffort', 'cfgByok2Protocol', 'cfgByok2ServiceTier',
+    'cfgByok3Host', 'cfgByok3Key', 'cfgByok3Model', 'cfgByok3ThinkingEffort', 'cfgByok3Protocol', 'cfgByok3ServiceTier',
+    'cfgByok4Host', 'cfgByok4Key', 'cfgByok4Model', 'cfgByok4ThinkingEffort', 'cfgByok4Protocol', 'cfgByok4ServiceTier',
     'cfgHybridPort', 'cfgInferencePort', 'cfgAnthropicPath', 'cfgOpenaiPath',
     'cfgMaxTokens', 'cfgCompletionTimeoutMs'
   ]);
@@ -976,11 +1250,15 @@
    */
   function scheduleAutoSave(immediate = false) {
     clearTimeout(autoSaveTimer);
+    // 只在编辑器打开时才自动保存
+    if (!currentEditingProfile) return;
 
     if (immediate) {
       // 立即保存（用于 change 事件）
+      const nameInput = fn4("cfgProfileName");
       fn5('saveConfig', {
         config: collectCurrentConfig(),
+        profileName: nameInput ? nameInput.value.trim() : "",
         silent: true  // 静默保存标志
       });
       return;
@@ -988,8 +1266,10 @@
 
     // 防抖：650ms 后保存（用于 input 事件）
     autoSaveTimer = setTimeout(() => {
+      const nameInput = fn4("cfgProfileName");
       fn5('saveConfig', {
         config: collectCurrentConfig(),
+        profileName: nameInput ? nameInput.value.trim() : "",
         silent: true
       });
     }, 650);
@@ -1003,21 +1283,10 @@
   }
 
   /**
-   * 收集当前配置
+   * 收集当前配置（复用 fn27 确保键名一致）
    */
   function collectCurrentConfig() {
-    const config = {};
-
-    AUTO_SAVE_FIELDS.forEach(fieldId => {
-      const element = fn4(fieldId);
-      if (element) {
-        config[fieldId] = element.type === 'checkbox'
-          ? element.checked
-          : element.value;
-      }
-    });
-
-    return config;
+    return fn27();
   }
 
   // 注册自动保存事件监听器
@@ -1064,10 +1333,14 @@
     const byok1Model = fn4("cfgByok1Model")?.value || "";
     const byok2Key = fn4("cfgByok2Key")?.value || "";
     const byok2Model = fn4("cfgByok2Model")?.value || "";
+    const byok3Key = fn4("cfgByok3Key")?.value || "";
+    const byok3Model = fn4("cfgByok3Model")?.value || "";
+    const byok4Key = fn4("cfgByok4Key")?.value || "";
+    const byok4Model = fn4("cfgByok4Model")?.value || "";
 
     const configBadge = fn4("configBadge");
     if (configBadge) {
-      // 如果任一 BYOK 未配置，显示警告徽章
+      // 如果必需的 BYOK #1 或 #2 未配置，显示警告徽章（#3/#4 为可选扩展槽位）
       if (!byok1Key || !byok1Model || !byok2Key || !byok2Model) {
         configBadge.classList.remove("hidden", "badge-success");
         configBadge.classList.add("badge-warning");
@@ -1079,7 +1352,7 @@
   }
 
   // 监听配置变更，更新徽章
-  const configFields = ["cfgByok1Key", "cfgByok1Model", "cfgByok2Key", "cfgByok2Model"];
+  const configFields = ["cfgByok1Key", "cfgByok1Model", "cfgByok2Key", "cfgByok2Model", "cfgByok3Key", "cfgByok3Model", "cfgByok4Key", "cfgByok4Model"];
   configFields.forEach(fieldId => {
     const field = fn4(fieldId);
     if (field) {

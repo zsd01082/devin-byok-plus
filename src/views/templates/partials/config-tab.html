@@ -1,5 +1,30 @@
 <!-- 配置连接 Tab -->
-<div class="byok-grid">
+
+<!-- 配置方案列表 -->
+<div class="profile-section">
+    <div class="profile-header">
+        <span class="profile-header-title">配置方案</span>
+        <button type="button" class="btn btn-s sm" data-ws-action="createProfile">＋ 新建</button>
+    </div>
+    <div id="profileList" class="profile-list">
+        <!-- 动态渲染 -->
+    </div>
+</div>
+
+<!-- 方案编辑器（默认隐藏，点击「新建」或列表项后展开） -->
+<div id="profileEditorCard" class="profile-editor-card hidden">
+    <div class="profile-editor-head">
+        <span class="profile-editor-icon">📝</span>
+        <span class="profile-editor-title">编辑方案</span>
+        <span class="badge badge-info" id="profileEditorBadge">使用中</span>
+        <button type="button" class="profile-editor-close" data-ws-action="closeProfileEditor" title="关闭编辑器">✕</button>
+    </div>
+    <div class="profile-editor-body">
+        <div class="fg">
+            <label>方案名称</label>
+            <input type="text" id="cfgProfileName" placeholder="方案名称" autocomplete="off">
+        </div>
+        <div class="byok-grid">
     <!-- BYOK #1 配置卡片 -->
     <div class="byok-card byok1-stripe">
         <div class="byok-card-head {{byok1HeadCollapsed}}" data-ws-toggle="byok1Body">
@@ -13,11 +38,13 @@
                 <button type="button" class="btn btn-s sm" data-ws-action="importExternalConfig" data-ws-source="claude" data-ws-slot="1">导入 Claude 配置</button>
                 <button type="button" class="btn btn-s sm" data-ws-action="importExternalConfig" data-ws-source="codex" data-ws-slot="1">导入 GPT 配置</button>
             </div>
+            <div class="fg"><label title="选择上游使用的 API 协议。「自动」按模型名识别；手动选择将覆盖识别结果并联动下方思考深度选项">API 协议 <span class="hint">（自动=按模型名识别）</span></label><select id="cfgByok1Protocol" title="选择上游使用的 API 协议；「自动」按模型名识别，手动会覆盖识别结果">{{byok1ProtocolOptions}}</select></div>
             <div class="row" style="gap:6px;margin-bottom:6px">
                 <select id="cfgByok1Model" style="flex:1;font-size:12px;padding:5px 8px">{{byok1ModelOption}}</select>
                 <button type="button" class="btn btn-s sm" data-ws-action="fetchModels" data-ws-slot="1" style="padding:4px 8px">加载模型</button>
             </div>
             <div class="fg" id="cfgByok1ThinkingEffortRow"><label id="cfgByok1ThinkingLabel">{{byok1ThinkingLabel}}</label><select id="cfgByok1ThinkingEffort">{{byok1ThinkingOptions}}</select></div>
+            <div class="fg" id="cfgByok1ServiceTierRow"><label title="GPT 专用：开启后向 OpenAI 请求体写入 service_tier=fast，启用优先级通道">GPT Fast Mode</label><select id="cfgByok1ServiceTier">{{byok1ServiceTierOptions}}</select></div>
             <div id="modelFetchStatus1" style="font-size:10px;color:{{textColor}}"></div>
         </div>
     </div>
@@ -35,12 +62,62 @@
                 <button type="button" class="btn btn-s sm" data-ws-action="importExternalConfig" data-ws-source="claude" data-ws-slot="2">导入 Claude 配置</button>
                 <button type="button" class="btn btn-s sm" data-ws-action="importExternalConfig" data-ws-source="codex" data-ws-slot="2">导入 GPT 配置</button>
             </div>
+            <div class="fg"><label title="选择上游使用的 API 协议。「自动」按模型名识别；手动选择将覆盖识别结果并联动下方思考深度选项">API 协议 <span class="hint">（自动=按模型名识别）</span></label><select id="cfgByok2Protocol" title="选择上游使用的 API 协议；「自动」按模型名识别，手动会覆盖识别结果">{{byok2ProtocolOptions}}</select></div>
             <div class="row" style="gap:6px;margin-bottom:6px">
                 <select id="cfgByok2Model" style="flex:1;font-size:12px;padding:5px 8px">{{byok2ModelOption}}</select>
                 <button type="button" class="btn btn-s sm" data-ws-action="fetchModels" data-ws-slot="2" style="padding:4px 8px">加载模型</button>
             </div>
             <div class="fg" id="cfgByok2ThinkingEffortRow"><label id="cfgByok2ThinkingLabel">{{byok2ThinkingLabel}}</label><select id="cfgByok2ThinkingEffort">{{byok2ThinkingOptions}}</select></div>
+            <div class="fg" id="cfgByok2ServiceTierRow"><label title="GPT 专用：开启后向 OpenAI 请求体写入 service_tier=fast，启用优先级通道">GPT Fast Mode</label><select id="cfgByok2ServiceTier">{{byok2ServiceTierOptions}}</select></div>
             <div id="modelFetchStatus2" style="font-size:10px;color:{{textColor}}"></div>
+        </div>
+    </div>
+
+    <!-- BYOK #3 配置卡片 -->
+    <div class="byok-card byok3-stripe">
+        <div class="byok-card-head {{byok3HeadCollapsed}}" data-ws-toggle="byok3Body">
+            <span class="byok-card-title">BYOK #3 · Claude Sonnet 4 BYOK</span>
+            <span class="badge {{byok3BadgeClass}}">{{byok3BadgeText}}</span>
+        </div>
+        <div id="byok3Body" class="byok-card-body {{byok3BodyHidden}}">
+            <div class="fg"><label>Base URL（可选）</label><input type="text" id="cfgByok3Host" value="{{byok3Host}}" placeholder="例如 api-c.example.com"></div>
+            <div class="fg"><label>API Key</label><input type="password" id="cfgByok3Key" value="{{byok3Key}}" placeholder="BYOK #3 API Key" autocomplete="off"></div>
+            <div class="btns" style="margin-bottom:6px">
+                <button type="button" class="btn btn-s sm" data-ws-action="importExternalConfig" data-ws-source="claude" data-ws-slot="3">导入 Claude 配置</button>
+                <button type="button" class="btn btn-s sm" data-ws-action="importExternalConfig" data-ws-source="codex" data-ws-slot="3">导入 GPT 配置</button>
+            </div>
+            <div class="fg"><label title="选择上游使用的 API 协议。「自动」按模型名识别；手动选择将覆盖识别结果并联动下方思考深度选项">API 协议 <span class="hint">（自动=按模型名识别）</span></label><select id="cfgByok3Protocol" title="选择上游使用的 API 协议；「自动」按模型名识别，手动会覆盖识别结果">{{byok3ProtocolOptions}}</select></div>
+            <div class="row" style="gap:6px;margin-bottom:6px">
+                <select id="cfgByok3Model" style="flex:1;font-size:12px;padding:5px 8px">{{byok3ModelOption}}</select>
+                <button type="button" class="btn btn-s sm" data-ws-action="fetchModels" data-ws-slot="3" style="padding:4px 8px">加载模型</button>
+            </div>
+            <div class="fg" id="cfgByok3ThinkingEffortRow"><label id="cfgByok3ThinkingLabel">{{byok3ThinkingLabel}}</label><select id="cfgByok3ThinkingEffort">{{byok3ThinkingOptions}}</select></div>
+            <div class="fg" id="cfgByok3ServiceTierRow"><label title="GPT 专用：开启后向 OpenAI 请求体写入 service_tier=fast，启用优先级通道">GPT Fast Mode</label><select id="cfgByok3ServiceTier">{{byok3ServiceTierOptions}}</select></div>
+            <div id="modelFetchStatus3" style="font-size:10px;color:{{textColor}}"></div>
+        </div>
+    </div>
+
+    <!-- BYOK #4 配置卡片 -->
+    <div class="byok-card byok4-stripe">
+        <div class="byok-card-head {{byok4HeadCollapsed}}" data-ws-toggle="byok4Body">
+            <span class="byok-card-title">BYOK #4 · Claude Sonnet 4 Thinking BYOK</span>
+            <span class="badge {{byok4BadgeClass}}">{{byok4BadgeText}}</span>
+        </div>
+        <div id="byok4Body" class="byok-card-body {{byok4BodyHidden}}">
+            <div class="fg"><label>Base URL（可选）</label><input type="text" id="cfgByok4Host" value="{{byok4Host}}" placeholder="例如 api-d.example.com"></div>
+            <div class="fg"><label>API Key</label><input type="password" id="cfgByok4Key" value="{{byok4Key}}" placeholder="BYOK #4 API Key" autocomplete="off"></div>
+            <div class="btns" style="margin-bottom:6px">
+                <button type="button" class="btn btn-s sm" data-ws-action="importExternalConfig" data-ws-source="claude" data-ws-slot="4">导入 Claude 配置</button>
+                <button type="button" class="btn btn-s sm" data-ws-action="importExternalConfig" data-ws-source="codex" data-ws-slot="4">导入 GPT 配置</button>
+            </div>
+            <div class="fg"><label title="选择上游使用的 API 协议。「自动」按模型名识别；手动选择将覆盖识别结果并联动下方思考深度选项">API 协议 <span class="hint">（自动=按模型名识别）</span></label><select id="cfgByok4Protocol" title="选择上游使用的 API 协议；「自动」按模型名识别，手动会覆盖识别结果">{{byok4ProtocolOptions}}</select></div>
+            <div class="row" style="gap:6px;margin-bottom:6px">
+                <select id="cfgByok4Model" style="flex:1;font-size:12px;padding:5px 8px">{{byok4ModelOption}}</select>
+                <button type="button" class="btn btn-s sm" data-ws-action="fetchModels" data-ws-slot="4" style="padding:4px 8px">加载模型</button>
+            </div>
+            <div class="fg" id="cfgByok4ThinkingEffortRow"><label id="cfgByok4ThinkingLabel">{{byok4ThinkingLabel}}</label><select id="cfgByok4ThinkingEffort">{{byok4ThinkingOptions}}</select></div>
+            <div class="fg" id="cfgByok4ServiceTierRow"><label title="GPT 专用：开启后向 OpenAI 请求体写入 service_tier=fast，启用优先级通道">GPT Fast Mode</label><select id="cfgByok4ServiceTier">{{byok4ServiceTierOptions}}</select></div>
+            <div id="modelFetchStatus4" style="font-size:10px;color:{{textColor}}"></div>
         </div>
     </div>
 </div>
@@ -85,7 +162,10 @@
     </div>
 </div>
 
-<!-- 保存按钮 -->
-<div class="btns" style="margin-top:12px;padding-top:12px;border-top:1px solid {{borderColor}}">
-    <button type="button" class="btn btn-p" data-ws-action="saveConfig">💾 保存配置</button>
+<!-- 编辑器底部按钮 -->
+<div class="btns" style="margin-top:16px;padding-top:12px;border-top:1px solid {{borderColor}}">
+    <button type="button" class="btn btn-p" data-ws-action="saveProfileEditor">💾 应用到方案</button>
+    <button type="button" class="btn btn-s" data-ws-action="resetProfileEditor">↻ 重置</button>
 </div>
+    </div><!-- .profile-editor-body -->
+</div><!-- #profileEditorCard -->

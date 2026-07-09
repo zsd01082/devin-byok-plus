@@ -2,35 +2,41 @@
 
 > **非官方社区工具** — 与 Devin Desktop（原 Windsurf）、Codeium / Cognition 无隶属或授权关系。使用前请阅读 [DISCLAIMER.md](docs/DISCLAIMER.md)、[SECURITY.md](docs/SECURITY.md) 与 [CONTRIBUTING.md](docs/CONTRIBUTING.md)。
 
-Devin Desktop BYOK 增强版 — 多模型路由、双槽位、思考强度控制，使用自己的 API Key 连接 Claude / GPT / Gemini 模型。
+Devin Desktop BYOK 增强版 — 多模型路由、4 个 BYOK 槽位、手动协议选择、思考强度控制、OpenAI Fast Mode，使用自己的 API Key 连接 Claude / GPT / Gemini 模型。
 
 > **更名说明：** 2026 年 6 月起 Windsurf 已更名为 [Devin Desktop](https://devin.ai/desktop/)。本项目同步更名为 **Devin BYOK Plus**，并保留对旧版 Windsurf 安装路径的兼容。
 
 ## 项目来源
 
-**本仓库 fork 自 [jornlin/devin-byok-plus](https://github.com/jornlin/devin-byok-plus)，在上游仓库的基础上进行个人定制与功能增强。**
+**本仓库 fork 自 [jornlin/devin-byok-plus](https://github.com/jornlin/devin-byok-plus)，在上游仓库基础上进行个人定制与功能增强。**
 
-衷心感谢 [@jornlin](https://github.com/jornlin) 的持续维护与功能完善。本 fork 在原有基础上新增：
+本 fork 额外保留/新增：
 
 - **补全代理可选开关** (`ENABLE_COMPLETION_PROXY`)：支持禁用本地 Inference 代理，保留 Devin/Codeium 原生补全与 Tab 跳转，聊天 BYOK 不受影响
 - 其他个人定制优化
 
-上游项目最初 fork 自 [@ycx932436](https://github.com/ycx932436) 开创的 [devin-byok-bridge](https://github.com/ycx932436/devin-byok-bridge)，感谢开源社区的无私贡献！
-
 ## 致谢
 
-**原始项目来自 [ycx932436/devin-byok-bridge](https://github.com/ycx932436/devin-byok-bridge)，在原作者出色工作的基础上进行功能扩展与持续维护。**
+**本项目 fork 自 [ycx932436/devin-byok-bridge](https://github.com/ycx932436/devin-byok-bridge)，在原作者出色工作的基础上进行功能扩展与持续维护。**
 
-衷心感谢原作者 [@ycx932436](https://github.com/ycx932436) 打下的坚实基础，开创了 Devin Desktop BYOK 本地代理的先河。
+衷心感谢原作者 [@ycx932436](https://github.com/ycx932436) 打下的坚实基础，开创了 Devin Desktop BYOK 本地代理的先河。本仓库在原有基础上的增强包括：
 
-**再次向开源社区致敬，感谢所有贡献者！**
+- 4 槽位 BYOK 扩展（新增 Claude Sonnet 4 BYOK #3 / #4）
+- 多渠道 Profile 方案系统
+- 手动协议选择（anthropic / openai / gemini）
+- OpenAI `service_tier=fast` 优先级通道支持
+- Prompt Cache / Token 用量日志
+- 请求重试与熔断机制
+- 持续的 bug 修复与文档完善
+
+**再次向原作者致敬，感谢开源精神！**
 
 **设计定位：** 仅在本机运行（默认 `127.0.0.1`），代理与配置由用户自行管理，**不面向公网或多用户部署**。
 
 - 插件 ID：`devin-byok-plus`
 - 显示名：Devin BYOK Plus
 - 维护者 / Publisher：`jornlin`
-- 版本：2.1.2
+- 版本：2.3.0
 - 仓库：https://github.com/jornlin/devin-byok-plus
 
 ## 安装
@@ -45,23 +51,27 @@ Devin Desktop BYOK 增强版 — 多模型路由、双槽位、思考强度控�
 ## 快速开始
 
 1. 点击左侧 **Devin BYOK Plus** 图标打开控制面板
-2. 在 **BYOK #1** 和 **BYOK #2** 分别填写 Base URL（可选）、API Key，或点击 **导入 Claude 配置** / **导入 GPT 配置** 读取 `~/.claude` / `~/.codex` 用户配置
-3. 各自点击 **加载模型**，选择模型；导入配置会自动保存并尝试加载模型；Claude / GPT / Gemini 会显示对应厂商的思考强度选项
-4. 点击 **一键启动**
-5. 在 **补丁管理** 中安装补丁，然后 **重载窗口**
+2. 在 **BYOK #1 至 #4** （任选）分别填写 Base URL（可选）、API Key，或点击 **导入 Claude 配置** / **导入 GPT 配置** 读取 `~/.claude` / `~/.codex` 用户配置
+3. （可选）从 **Protocol** 下拉手动选择 anthropic / openai / gemini，空值时自动按模型名识别
+4. 各自点击 **加载模型**，选择模型；导入配置会自动保存并尝试加载模型；Claude / GPT / Gemini 会显示对应厂商的思考强度选项
+5. （可选）OpenAI 模型可将 **GPT Fast Mode** 设为 `Fast · service_tier=fast` 启用优先级通道
+6. 点击 **一键启动**
+7. 在 **补丁管理** 中安装补丁，然后 **重载窗口**
 
-> **💡 自动保存提示**：配置字段（API Key、模型、端口等）会在输入后自动保存（650ms 防抖），无需手动点击"保存配置"按钮。显式保存仍会显示成功提示。
+> **💡 自动保存提示**：配置字段（API Key、模型、端口、协议、Fast Mode 等）会在输入后自动保存（650ms 防抖），无需手动点击"保存配置"按钮。显式保存仍会显示成功提示。
 
-## 双 BYOK 配置
+## 4 BYOK 配置
 
-两套代理完全独立，可指向不同网关、不同 Key、不同模型。
+四套代理完全独立，可分别指向不同网关、不同 Key、不同模型。BYOK #3 / #4 为可选扩展槽位，不强制配置。
 
 | 槽位 | Devin Desktop 中选择 | 用途 |
 |------|----------------------|------|
-| **BYOK #1** | `Claude Opus 4 BYOK` | 主代理槽位 |
-| **BYOK #2** | `Claude Opus 4 Thinking BYOK` | 第二代理槽位（常用于思考模型） |
+| **BYOK #1** | `Claude Opus 4 BYOK` | 主代理槽位（Opus） |
+| **BYOK #2** | `Claude Opus 4 Thinking BYOK` | Opus 思考模型 |
+| **BYOK #3** | `Claude Sonnet 4 BYOK` | Sonnet 高性价比槽位 |
+| **BYOK #4** | `Claude Sonnet 4 Thinking BYOK` | Sonnet 思考模型 |
 
-在侧栏选什么模型，Devin Desktop 走对应槽位时就用那个模型（Claude 或 GPT 均可）。
+在侧栏选什么模型，Devin Desktop 走对应槽位时就用那个模型（Claude / GPT / Gemini 均可）。每个槽位可独立选择厂商、模型、思考强度、手动协议以及 OpenAI Fast Mode。
 
 ## 思考强度
 
@@ -116,7 +126,7 @@ devin-byok-plus/
 ├── src/
 │   ├── extension.js           # 插件入口
 │   ├── managers/              # 代理进程 / 补丁管理
-│   │   ├── proxyManager.js
+│   │   ├── proxyManager.js         # 代理启停、.env 写入、运行时热重载
 │   │   ├── patchManager.js
 │   │   ├── proxy-config.js
 │   │   ├── proxy-paths.js
@@ -125,40 +135,43 @@ devin-byok-plus/
 │   │   ├── sidebarProvider.js
 │   │   └── sidebar-utils.js
 │   ├── services/              # 业务服务（Provider 模块化拆分）
-│   │   ├── diagnostics.js
+│   │   ├── diagnostics.js              # 环境与路由诊断（含 service_tier）
 │   │   ├── environmentProbe.js
-│   │   ├── externalConfigImporter.js  # 读取 ~/.claude / ~/.codex
+│   │   ├── externalConfigImporter.js   # 读取 ~/.claude / ~/.codex
 │   │   ├── modelFetcher.js
+│   │   ├── profileStore.js             # 多方案存储（~/.devin-byok-plus/profiles.json）
 │   │   ├── promptTemplates.js
 │   │   └── thinkingEffort.js
 │   ├── utils/                 # 工具函数
-│   │   ├── gatewayUrl.js      # 网关 URL 协议推断
-│   │   ├── integrity.js       # 设备 ID / 版本
+│   │   ├── gatewayUrl.js               # 网关 URL 协议推断
+│   │   ├── integrity.js                # 设备 ID / 版本
 │   │   └── reloadWorkbench.js
 │   ├── views/                 # 视图模板与样式
 │   │   ├── sidebarHtml.js
-│   │   ├── sidebarTemplate.js
-│   │   ├── styles/sidebar.css # Tailwind CSS 源文件
-│   │   └── templates/         # HTML partials（config-tab、control-tab、system-tab、tutorial）
+│   │   ├── sidebarTemplate.js          # 渲染数据准备（含 protocol / serviceTier options）
+│   │   ├── styles/sidebar.css          # Tailwind CSS 源文件
+│   │   └── templates/                  # HTML partials（config-tab / control-tab / system-tab / tutorial）
 │   └── proxy/                 # 代理服务源码（构建后复制到 proxy-scripts/src/）
-│       ├── hybrid-server.js   # 聊天 / 搜索 / embeddings（:3006）
-│       ├── inference-proxy.js # 代码补全（:3001）
+│       ├── hybrid-server.js            # 聊天 / 搜索 / embeddings（:3006）
+│       ├── inference-proxy.js          # 代码补全（:3001）
 │       ├── connect.js / proto.js / net-utils.js / ws-bridge.js / retry-utils.js
 │       ├── prompts/system-prompt.md
 │       └── handlers/
-│           ├── byok-slots.js          # 双 BYOK 槽位路由
-│           ├── models.js              # 运行时配置
-│           ├── chat.js                # 聊天 + 思考强度
-│           ├── gateway-capability.js  # 网关能力缓存
-│           ├── openai-request.js      # OpenAI 路径与回退转换
-│           ├── completions.js         # 补全（BYOK #1 Anthropic）
+│           ├── byok-slots.js               # 4 槽位 BYOK 路由 + protocol 白名单
+│           ├── models.js                   # 运行时配置（含 service_tier）
+│           ├── chat.js                     # 聊天 + 思考强度 + service_tier 注入
+│           ├── gateway-capability.js       # 网关能力缓存
+│           ├── openai-request.js           # OpenAI 路径与回退转换
+│           ├── completions.js              # 补全（BYOK #1 Anthropic）
+│           ├── prompt-cache.js             # Prompt Cache 断点与降级重试
+│           ├── usage-log.js                # Token 用量统一日志
 │           ├── anthropic-stream.js / openai-stream.js
-│           └── …                      # parse-request, embeddings, web-search 等
+│           └── …                           # parse-request, embeddings, web-search 等
 ├── proxy-scripts/             # 代理运行时目录
 │   ├── package.json
 │   ├── prompts/
-│   └── src/                   # [构建产物] 从 src/proxy/ 自动复制
-├── resources/                 # 图标等静态资源
+│   └── src/                        # [构建产物] 从 src/proxy/ 自动复制
+├── resources/                 # 图标等静态资源 + webviews/sidebar.js
 ├── test/                      # 单元测试
 └── scripts/                   # 构建 / 打包 / 发布脚本
 ```
@@ -167,27 +180,24 @@ devin-byok-plus/
 
 由插件写入 `proxy-scripts/.env`（该文件已被 `.gitignore` 排除）。手动配置时可参考模板：[proxy-scripts/.env.example](proxy-scripts/.env.example)。
 
-### BYOK #1
+### BYOK #1 至 #4
+
+每个槽位（n = 1..4）均支持相同字段：
 
 ```
-BYOK1_ANTHROPIC_API_HOST=
-BYOK1_ANTHROPIC_API_KEY=
-BYOK1_OPENAI_API_HOST=
-BYOK1_OPENAI_API_KEY=
-BYOK1_MODEL=
-BYOK1_THINKING_EFFORT=        # low | medium | high | xhigh | max
+BYOKn_ANTHROPIC_API_HOST=
+BYOKn_ANTHROPIC_API_KEY=
+BYOKn_ANTHROPIC_API_PATH=/v1/messages
+BYOKn_OPENAI_API_HOST=
+BYOKn_OPENAI_API_KEY=
+BYOKn_OPENAI_API_PATH=/v1/responses
+BYOKn_OPENAI_SERVICE_TIER=    # fast 或空；启用 OpenAI 优先级通道
+BYOKn_MODEL=
+BYOKn_THINKING_EFFORT=        # low | medium | high | xhigh | max
+BYOKn_PROTOCOL=               # anthropic | openai | gemini | 空（自动识别）
 ```
 
-### BYOK #2
-
-```
-BYOK2_ANTHROPIC_API_HOST=
-BYOK2_ANTHROPIC_API_KEY=
-BYOK2_OPENAI_API_HOST=
-BYOK2_OPENAI_API_KEY=
-BYOK2_MODEL=
-BYOK2_THINKING_EFFORT=
-```
+> `.env.example` 仅列出 BYOK #1 / #2 作为参考；BYOK #3 / #4 采用完全相同的前缀命名方式手动补充即可。
 
 ### 兼容 / 补全（镜像 BYOK #1）
 
@@ -196,6 +206,7 @@ ANTHROPIC_API_HOST=
 ANTHROPIC_API_KEY=
 OPENAI_API_HOST=
 OPENAI_API_KEY=
+OPENAI_SERVICE_TIER=          # 镜像 BYOK1_OPENAI_SERVICE_TIER
 DEFAULT_MODEL=
 OPENAI_REASONING_EFFORT=      # 镜像 BYOK1_THINKING_EFFORT
 OPENAI_THINKING_ENABLED=
@@ -218,7 +229,7 @@ ADMIN_TOKEN=                  # 可选；设置后 /api/config POST 需 Bearer �
 
 可选环境变量（手动写入 `.env`）：
 
-- `ENABLE_COMPLETION_PROXY=false` — **[新增]** 禁用本地 Inference 补全代理，保留 Devin/Codeium 原生补全与 Tab 跳转；聊天 BYOK 不受影响。设置后需在侧栏重新「安装补丁」并「重载窗口」
+- `ENABLE_COMPLETION_PROXY=false` — 禁用本地 Inference 补全代理，保留 Devin/Codeium 原生补全与 Tab 跳转；聊天 BYOK 不受影响。设置后需在侧栏重新「安装补丁」并「重载窗口」
 - `OPENAI_ENABLE_REASONING=false` — 关闭 GPT reasoning
 - `GATEWAY_CAPABILITY_TTL_MS=3600000` — 网关能力缓存 TTL；用于记住某网关是否优先走 Chat Completions
 - `STRIP_UNSIGNED_THINKING=false` — 保留无 signature 的 Claude thinking 块（默认剔除，建议保持默认）
@@ -226,10 +237,24 @@ ADMIN_TOKEN=                  # 可选；设置后 /api/config POST 需 Bearer �
 - `VOYAGE_API_KEY=` — Embeddings 走 Voyage 时需要
 - `PROXY_SESSION_SECRET=` — 可选；用于上游请求签名（见 [SECURITY.md](docs/SECURITY.md)）
 
+Prompt Cache / Token 优化（默认开启，流结束输出 `📊` 用量日志）：
+
+- `PROMPT_CACHE_ENABLED=true` — 总开关，`false` 时停用全部 cache 优化
+- `ANTHROPIC_PROMPT_CACHE=true` — Claude 请求打 `cache_control` 断点（网关不支持时自动降级重试）
+- `OPENAI_PROMPT_CACHE=observe` — GPT/Gemini 前缀缓存模式：`observe`（默认）/ `auto` / `off`
+- `PROMPT_CACHE_SORT_TOOLS=true` — tools 按 name 稳定排序，稳定请求前缀
+- `PROMPT_CACHE_TAIL_MESSAGES=2` — cache 断点距消息尾部的偏移条数
+- `EXPOSE_BACKEND_INFO=false` — 是否在 system prompt 末尾追加 backend 信息（开启会破坏前缀缓存）
+
+上游代理地址覆盖：
+
+- `PROXY_API_HOST=` — hybrid-server 上游 API 地址（默认 `server.self-serve.windsurf.com`）
+- `PROXY_INFERENCE_HOST=` — inference-proxy 上游地址（默认 `inference.codeium.com`）
+
 ## 已知限制
 
 - **代码补全 (Completions)** 默认走本地 Inference 补全代理，仅支持 Anthropic 通道，使用 BYOK #1 镜像配置；暂不支持 GPT 补全。
-  - **新增功能**：可通过设置 `ENABLE_COMPLETION_PROXY=false` 禁用本地补全代理，保留 Devin/Codeium 原生补全、跨行 Tab 跳转或 next edit 功能，聊天 BYOK 不受影响
+  - 可通过设置 `ENABLE_COMPLETION_PROXY=false` 禁用本地补全代理，保留 Devin/Codeium 原生补全、跨行 Tab 跳转或 next edit 功能，聊天 BYOK 不受影响
   - 禁用补全代理后，扩展会自动跳过/清理 Inference URL 补丁，只保留聊天 BYOK 补丁
 - **GPT** 无独立 Devin BYOK 入口，需在 BYOK 槽位中选择 GPT 模型
 - 网关需支持对应 API：Claude `/v1/messages`；GPT/Gemini 优先 `/v1/responses`，不支持时回退 `/v1/chat/completions`
@@ -339,7 +364,7 @@ npm run package
 ### 安装方法
 
 1. **通过 VS Code GUI**：扩展面板 → 右上角 `...` → 从 VSIX 安装
-2. **通过命令行**：`code --install-extension devin-byok-plus-2.1.1.vsix`
+2. **通过命令行**：`code --install-extension devin-byok-plus-2.3.0.vsix`
 3. **拖拽安装**：直接拖拽 `.vsix` 到 VS Code 窗口
 
 详细打包说明请查看 [PACKAGING.md](./docs/PACKAGING.md)。
