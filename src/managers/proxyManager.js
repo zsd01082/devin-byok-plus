@@ -75,6 +75,15 @@ class ProxyManager {
     this.updateStatusBar();
     this.statusBar.show();
     tmp0.subscriptions.push(this.statusBar);
+    this.balanceStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+    this.balanceStatusBar.command = "devin-byok-plus.refreshBalance";
+    this.balanceStatusBar.text = "$(credit-card) 余额: --";
+    this.balanceStatusBar.tooltip = "点击刷新 API 余额";
+    // 默认隐藏，仅当激活方案配置了余额查询信息时由 fetchApiBalance 显示
+    this.balanceStatusBar.hide();
+    tmp0.subscriptions.push(this.balanceStatusBar);
+    this.balanceTimer = null;
+    this.startBalanceTimer();
     this.refreshExternalProxyStatus();
   }
   updateStatusBar() {
@@ -108,6 +117,9 @@ class ProxyManager {
   }
   ensureUserConfigDir() {
     return proxyPaths.ensureUserConfigDir();
+  }
+  getGatewayCapabilityCachePath() {
+    return path.join(this.ensureUserConfigDir(), "gateway-capability-cache.json");
   }
   getDefaultSystemPromptFilePath() {
     if (this.usesPersistentUserConfig()) {
@@ -501,6 +513,21 @@ class ProxyManager {
   getCompletionTimeoutMs(tmp0) {
     return proxyConfig.getCompletionTimeoutMs(tmp0);
   }
+  /**
+   * 模型列表接管模式：inject（默认）| replace | off
+   * inject 保留官方模型并追加 BYOK 槽位，Pro 账号可继续使用官方额度；
+   * replace 只显示 BYOK 槽位；off 完全不接管。
+   */
+  getModelListMode(tmp0) {
+    return proxyConfig.getModelListMode(tmp0);
+  }
+  /**
+   * 上下文窗口：写入模型条目 f18，决定 Devin 对话框显示的上下文额度。
+   * 与 MAX_TOKENS（发往上游的输出上限）无关。
+   */
+  getContextWindow(tmp0) {
+    return proxyConfig.getContextWindow(tmp0);
+  }
   getSystemPromptConfigPath(tmp0) {
     return proxyConfig.getSystemPromptConfigPath(tmp0);
   }
@@ -509,7 +536,8 @@ class ProxyManager {
   }
   resolveEnvForProxySpawn(tmp0) {
     const tmp1 = {
-      ...tmp0
+      ...tmp0,
+      GATEWAY_CAPABILITY_CACHE_PATH: this.getGatewayCapabilityCachePath()
     };
     if (String(tmp1.SYSTEM_PROMPT_OVERRIDE || "").toLowerCase() === "true") {
       tmp1.SYSTEM_PROMPT_PATH = this.getResolvedSystemPromptPath(tmp1);
@@ -519,7 +547,7 @@ class ProxyManager {
   writeEnvConfig(tmp0) {
     const tmp1 = this.getEnvFilePath();
     const tmp2 = this.readEnvConfig();
-    const tmp3 = new Set(["ANTHROPIC_API_HOST", "ANTHROPIC_API_KEY", "ANTHROPIC_API_PATH", "OPENAI_API_HOST", "OPENAI_API_KEY", "OPENAI_API_PATH", "OPENAI_SERVICE_TIER", "HYBRID_PORT", "INFERENCE_PORT", "ENABLE_COMPLETION_PROXY", "DEFAULT_MODEL", "MAX_TOKENS", "OPENAI_REASONING_EFFORT", "OPENAI_THINKING_ENABLED", "COMPLETION_TIMEOUT_MS", "SYSTEM_PROMPT_OVERRIDE", "SYSTEM_PROMPT_PATH", "BYOK1_ANTHROPIC_API_HOST", "BYOK1_ANTHROPIC_API_KEY", "BYOK1_ANTHROPIC_API_PATH", "BYOK1_OPENAI_API_HOST", "BYOK1_OPENAI_API_KEY", "BYOK1_OPENAI_API_PATH", "BYOK1_OPENAI_SERVICE_TIER", "BYOK1_MODEL", "BYOK1_THINKING_EFFORT", "BYOK2_ANTHROPIC_API_HOST", "BYOK2_ANTHROPIC_API_KEY", "BYOK2_ANTHROPIC_API_PATH", "BYOK2_OPENAI_API_HOST", "BYOK2_OPENAI_API_KEY", "BYOK2_OPENAI_API_PATH", "BYOK2_OPENAI_SERVICE_TIER", "BYOK2_MODEL", "BYOK2_THINKING_EFFORT", "BYOK3_ANTHROPIC_API_HOST", "BYOK3_ANTHROPIC_API_KEY", "BYOK3_ANTHROPIC_API_PATH", "BYOK3_OPENAI_API_HOST", "BYOK3_OPENAI_API_KEY", "BYOK3_OPENAI_API_PATH", "BYOK3_OPENAI_SERVICE_TIER", "BYOK3_MODEL", "BYOK3_THINKING_EFFORT", "BYOK4_ANTHROPIC_API_HOST", "BYOK4_ANTHROPIC_API_KEY", "BYOK4_ANTHROPIC_API_PATH", "BYOK4_OPENAI_API_HOST", "BYOK4_OPENAI_API_KEY", "BYOK4_OPENAI_API_PATH", "BYOK4_OPENAI_SERVICE_TIER", "BYOK4_MODEL", "BYOK4_THINKING_EFFORT"]);
+    const tmp3 = new Set(["ANTHROPIC_API_HOST", "ANTHROPIC_API_KEY", "ANTHROPIC_API_PATH", "OPENAI_API_HOST", "OPENAI_API_KEY", "OPENAI_API_PATH", "OPENAI_SERVICE_TIER", "OPENAI_REASONING_MODE", "HYBRID_PORT", "INFERENCE_PORT", "ENABLE_COMPLETION_PROXY", "DEFAULT_MODEL", "MAX_TOKENS", "OPENAI_REASONING_EFFORT", "OPENAI_THINKING_ENABLED", "COMPLETION_TIMEOUT_MS", "SYSTEM_PROMPT_OVERRIDE", "SYSTEM_PROMPT_PATH", "MODEL_LIST_MODE", "CONTEXT_WINDOW", "BYOK1_ANTHROPIC_API_HOST", "BYOK1_ANTHROPIC_API_KEY", "BYOK1_ANTHROPIC_API_PATH", "BYOK1_OPENAI_API_HOST", "BYOK1_OPENAI_API_KEY", "BYOK1_OPENAI_API_PATH", "BYOK1_OPENAI_SERVICE_TIER", "BYOK1_OPENAI_REASONING_MODE", "BYOK1_MODEL", "BYOK1_THINKING_EFFORT", "BYOK2_ANTHROPIC_API_HOST", "BYOK2_ANTHROPIC_API_KEY", "BYOK2_ANTHROPIC_API_PATH", "BYOK2_OPENAI_API_HOST", "BYOK2_OPENAI_API_KEY", "BYOK2_OPENAI_API_PATH", "BYOK2_OPENAI_SERVICE_TIER", "BYOK2_OPENAI_REASONING_MODE", "BYOK2_MODEL", "BYOK2_THINKING_EFFORT", "BYOK3_ANTHROPIC_API_HOST", "BYOK3_ANTHROPIC_API_KEY", "BYOK3_ANTHROPIC_API_PATH", "BYOK3_OPENAI_API_HOST", "BYOK3_OPENAI_API_KEY", "BYOK3_OPENAI_API_PATH", "BYOK3_OPENAI_SERVICE_TIER", "BYOK3_OPENAI_REASONING_MODE", "BYOK3_MODEL", "BYOK3_THINKING_EFFORT", "BYOK4_ANTHROPIC_API_HOST", "BYOK4_ANTHROPIC_API_KEY", "BYOK4_ANTHROPIC_API_PATH", "BYOK4_OPENAI_API_HOST", "BYOK4_OPENAI_API_KEY", "BYOK4_OPENAI_API_PATH", "BYOK4_OPENAI_SERVICE_TIER", "BYOK4_OPENAI_REASONING_MODE", "BYOK4_MODEL", "BYOK4_THINKING_EFFORT"]);
     const tmp4 = Object.entries(tmp2).filter(([tmp02]) => !tmp3.has(tmp02) && /^[A-Za-z_][A-Za-z0-9_]*$/.test(tmp02)).map(([tmp02, tmp13]) => tmp02 + "=" + tmp13);
     const tmp5 = this.getSystemPromptConfigPath(tmp0);
     const tmp6 = ["# Devin BYOK Bridge 配置（由扩展管理）"];
@@ -538,6 +566,7 @@ class ProxyManager {
         tmp6.push(arg0 + "OPENAI_API_PATH=" + tmp0[arg0 + "OPENAI_API_PATH"]);
       }
       tmp6.push(arg0 + "OPENAI_SERVICE_TIER=" + (tmp0[arg0 + "OPENAI_SERVICE_TIER"] || ""));
+      tmp6.push(arg0 + "OPENAI_REASONING_MODE=" + (tmp0[arg0 + "OPENAI_REASONING_MODE"] || ""));
       tmp6.push(arg0 + "MODEL=" + (tmp0[arg0 + "MODEL"] || ""));
       tmp6.push(arg0 + "THINKING_EFFORT=" + (tmp0[arg0 + "THINKING_EFFORT"] || ""));
     };
@@ -557,6 +586,7 @@ class ProxyManager {
       tmp6.push("OPENAI_API_PATH=" + (tmp0.BYOK1_OPENAI_API_PATH || tmp0.OPENAI_API_PATH));
     }
     tmp6.push("OPENAI_SERVICE_TIER=" + (tmp0.BYOK1_OPENAI_SERVICE_TIER || tmp0.OPENAI_SERVICE_TIER || ""));
+    tmp6.push("OPENAI_REASONING_MODE=" + (tmp0.BYOK1_OPENAI_REASONING_MODE || tmp0.OPENAI_REASONING_MODE || ""));
     tmp6.push("", "# ─── 通用 ───");
     tmp6.push("HYBRID_PORT=" + this.getHybridPort(tmp0).toString());
     tmp6.push("INFERENCE_PORT=" + this.getInferencePort(tmp0).toString());
@@ -572,6 +602,8 @@ class ProxyManager {
     tmp6.push("OPENAI_REASONING_EFFORT=" + (tmp12 || ""));
     tmp6.push("OPENAI_THINKING_ENABLED=" + (tmp0.OPENAI_THINKING_ENABLED === "true" || !!tmp11 ? "true" : "false"));
     tmp6.push("COMPLETION_TIMEOUT_MS=" + this.getCompletionTimeoutMs(tmp0).toString());
+    tmp6.push("MODEL_LIST_MODE=" + this.getModelListMode(tmp0));
+    tmp6.push("CONTEXT_WINDOW=" + this.getContextWindow(tmp0).toString());
     if (tmp0.SYSTEM_PROMPT_OVERRIDE) {
       tmp6.push("SYSTEM_PROMPT_OVERRIDE=" + tmp0.SYSTEM_PROMPT_OVERRIDE);
       const tmp13 = this.usesPersistentUserConfig() ? this.getResolvedSystemPromptPath(tmp0) : tmp5;
@@ -594,6 +626,7 @@ class ProxyManager {
       BYOK1_OPENAI_API_KEY: tmp0.BYOK1_OPENAI_API_KEY || "",
       BYOK1_OPENAI_API_PATH: tmp0.BYOK1_OPENAI_API_PATH || "",
       BYOK1_OPENAI_SERVICE_TIER: tmp0.BYOK1_OPENAI_SERVICE_TIER || "",
+      BYOK1_OPENAI_REASONING_MODE: tmp0.BYOK1_OPENAI_REASONING_MODE || "",
       BYOK1_MODEL: tmp0.BYOK1_MODEL || "",
       BYOK1_THINKING_EFFORT: tmp0.BYOK1_THINKING_EFFORT || "",
       BYOK2_ANTHROPIC_API_HOST: tmp0.BYOK2_ANTHROPIC_API_HOST ? this.stripProtocol(tmp0.BYOK2_ANTHROPIC_API_HOST) : "",
@@ -603,6 +636,7 @@ class ProxyManager {
       BYOK2_OPENAI_API_KEY: tmp0.BYOK2_OPENAI_API_KEY || "",
       BYOK2_OPENAI_API_PATH: tmp0.BYOK2_OPENAI_API_PATH || "",
       BYOK2_OPENAI_SERVICE_TIER: tmp0.BYOK2_OPENAI_SERVICE_TIER || "",
+      BYOK2_OPENAI_REASONING_MODE: tmp0.BYOK2_OPENAI_REASONING_MODE || "",
       BYOK2_MODEL: tmp0.BYOK2_MODEL || "",
       BYOK2_THINKING_EFFORT: tmp0.BYOK2_THINKING_EFFORT || "",
       BYOK3_ANTHROPIC_API_HOST: tmp0.BYOK3_ANTHROPIC_API_HOST ? this.stripProtocol(tmp0.BYOK3_ANTHROPIC_API_HOST) : "",
@@ -612,6 +646,7 @@ class ProxyManager {
       BYOK3_OPENAI_API_KEY: tmp0.BYOK3_OPENAI_API_KEY || "",
       BYOK3_OPENAI_API_PATH: tmp0.BYOK3_OPENAI_API_PATH || "",
       BYOK3_OPENAI_SERVICE_TIER: tmp0.BYOK3_OPENAI_SERVICE_TIER || "",
+      BYOK3_OPENAI_REASONING_MODE: tmp0.BYOK3_OPENAI_REASONING_MODE || "",
       BYOK3_MODEL: tmp0.BYOK3_MODEL || "",
       BYOK3_THINKING_EFFORT: tmp0.BYOK3_THINKING_EFFORT || "",
       BYOK4_ANTHROPIC_API_HOST: tmp0.BYOK4_ANTHROPIC_API_HOST ? this.stripProtocol(tmp0.BYOK4_ANTHROPIC_API_HOST) : "",
@@ -621,6 +656,7 @@ class ProxyManager {
       BYOK4_OPENAI_API_KEY: tmp0.BYOK4_OPENAI_API_KEY || "",
       BYOK4_OPENAI_API_PATH: tmp0.BYOK4_OPENAI_API_PATH || "",
       BYOK4_OPENAI_SERVICE_TIER: tmp0.BYOK4_OPENAI_SERVICE_TIER || "",
+      BYOK4_OPENAI_REASONING_MODE: tmp0.BYOK4_OPENAI_REASONING_MODE || "",
       BYOK4_MODEL: tmp0.BYOK4_MODEL || "",
       BYOK4_THINKING_EFFORT: tmp0.BYOK4_THINKING_EFFORT || "",
       ANTHROPIC_API_HOST: tmp0.BYOK1_ANTHROPIC_API_HOST ? this.stripProtocol(tmp0.BYOK1_ANTHROPIC_API_HOST) : tmp0.ANTHROPIC_API_HOST ? this.stripProtocol(tmp0.ANTHROPIC_API_HOST) : "",
@@ -630,10 +666,13 @@ class ProxyManager {
       OPENAI_API_KEY: tmp0.BYOK1_OPENAI_API_KEY || tmp0.BYOK1_ANTHROPIC_API_KEY || tmp0.OPENAI_API_KEY || tmp0.ANTHROPIC_API_KEY || "",
       OPENAI_API_PATH: tmp0.BYOK1_OPENAI_API_PATH || tmp0.OPENAI_API_PATH || "",
       OPENAI_SERVICE_TIER: tmp0.BYOK1_OPENAI_SERVICE_TIER || tmp0.OPENAI_SERVICE_TIER || "",
+      OPENAI_REASONING_MODE: tmp0.BYOK1_OPENAI_REASONING_MODE || tmp0.OPENAI_REASONING_MODE || "",
       ENABLE_COMPLETION_PROXY: this.isCompletionProxyEnabled(tmp0) ? "true" : "false",
       OPENAI_REASONING_EFFORT: Object.prototype.hasOwnProperty.call(tmp0, "OPENAI_REASONING_EFFORT") ? tmp0.OPENAI_REASONING_EFFORT : tmp0.BYOK1_THINKING_EFFORT || "",
       OPENAI_THINKING_ENABLED: tmp0.OPENAI_THINKING_ENABLED === "true" || !!tmp0.BYOK1_THINKING_EFFORT,
-      COMPLETION_TIMEOUT_MS: this.getCompletionTimeoutMs(tmp0)
+      COMPLETION_TIMEOUT_MS: this.getCompletionTimeoutMs(tmp0),
+      MODEL_LIST_MODE: this.getModelListMode(tmp0),
+      CONTEXT_WINDOW: this.getContextWindow(tmp0).toString()
     };
     const tmp2 = Number.parseInt(String(tmp0.MAX_TOKENS || ""), 10);
     if (Number.isInteger(tmp2) && tmp2 > 0) {
@@ -1109,7 +1148,133 @@ class ProxyManager {
       requestCount: this.requestCount
     };
   }
+  async fetchApiBalance() {
+    // 整体包裹 try/catch：本方法在多个 fire-and-forget 场景被调用
+    // （定时器、命令、方案切换、构造），任何同步抛错都不得逃逸为 unhandled rejection。
+    try {
+      const https = require('https');
+      const http = require('http');
+      const profileStore = require('../services/profileStore');
+      const envConfig = this.readEnvConfig();
+      const profile = profileStore.getActiveProfile(envConfig);
+      const balanceToken = (profile?.balanceToken || '').trim();
+      const userId = (profile?.userId || '').trim();
+      // 配置即显示：仅当激活方案配置了余额查询凭据（访问令牌或用户 ID）时才显示余额栏并发起查询。
+      // 未配置的用户完全看不到余额栏，也不会产生任何网络请求。
+      if (!balanceToken && !userId) {
+        this.balanceStatusBar.hide();
+        return;
+      }
+      this.balanceStatusBar.show();
+      this.balanceStatusBar.text = "$(loading~spin) 余额: 刷新中";
+      const host = ((profile?.byok1?.host) || envConfig.BYOK1_OPENAI_API_HOST || envConfig.BYOK1_ANTHROPIC_API_HOST || envConfig.OPENAI_API_HOST || envConfig.ANTHROPIC_API_HOST || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+      const apiKey = (profile?.byok1?.key) || envConfig.BYOK1_ANTHROPIC_API_KEY || envConfig.OPENAI_API_KEY || envConfig.ANTHROPIC_API_KEY || '';
+      if (!host || !apiKey) {
+        this.balanceStatusBar.text = "$(credit-card) 余额: 未配置";
+        this.balanceStatusBar.tooltip = "请先配置 API Host 和 Key\n点击刷新";
+        return;
+      }
+      const useHttp = host.startsWith('localhost') || host.startsWith('127.');
+      const hostname = host.split(':')[0];
+      const port = host.includes(':') ? parseInt(host.split(':')[1]) : (useHttp ? 80 : 443);
+      const mod = useHttp ? http : https;
+
+      // 按优先级排列端点：userId+balanceToken组合 > userId+apiKey > 通用端点
+      const tryList = [];
+      if (balanceToken && userId) {
+        // 正确格式：Bearer balanceToken + New-Api-User: userId
+        tryList.push(['/api/user/self', { 'Authorization': 'Bearer ' + balanceToken, 'New-Api-User': userId }]);
+        tryList.push(['/api/user/self', { 'Authorization': balanceToken,             'New-Api-User': userId }]);
+        tryList.push(['/api/user/info', { 'Authorization': 'Bearer ' + balanceToken, 'New-Api-User': userId }]);
+      } else if (userId) {
+        tryList.push(['/api/user/self', { 'Authorization': 'Bearer ' + apiKey, 'New-Api-User': userId }]);
+        tryList.push(['/api/user/info', { 'Authorization': 'Bearer ' + apiKey, 'New-Api-User': userId }]);
+      } else if (balanceToken) {
+        tryList.push(['/api/user/self', { 'Authorization': 'Bearer ' + balanceToken }]);
+        tryList.push(['/api/user/self', { 'Authorization': balanceToken }]);
+      }
+      // 原来工作的3个通用端点（保持不变）
+      tryList.push(['/v1/dashboard/billing/credit_grants', { 'Authorization': 'Bearer ' + apiKey }]);
+      tryList.push(['/v1/user/balance',                    { 'Authorization': 'Bearer ' + apiKey }]);
+      tryList.push(['/dashboard/billing/credit_grants',    { 'Authorization': 'Bearer ' + apiKey }]);
+
+      const errors = [];
+      for (const [ep, extraHeaders] of tryList) {
+        try {
+          const result = await new Promise((resolve, reject) => {
+            const req = mod.request({
+              hostname, port, path: ep, method: 'GET',
+              rejectUnauthorized: false, timeout: 8000,
+              headers: { ...extraHeaders, 'Content-Type': 'application/json' },
+            }, (res) => {
+              let body = '';
+              res.on('data', c => body += c);
+              res.on('end', () => {
+                if (res.statusCode === 200) resolve(body);
+                else reject(new Error('HTTP ' + res.statusCode));
+              });
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+            req.end();
+          });
+          const json = JSON.parse(result);
+          const balance = this._parseBalance(json);
+          if (balance !== null) {
+            const fmt = balance.toFixed(2);
+            const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            this.balanceStatusBar.text = `$(credit-card) 余额: ${fmt}`;
+            this.balanceStatusBar.tooltip = `API 余额: ${fmt}\n来自: ${host}${ep}\n方案: ${profile?.name || '默认'}\n更新时间: ${now}\n点击刷新`;
+            return;
+          }
+          errors.push(ep + ':无余额字段');
+        } catch (e) {
+          errors.push(ep + ':' + e.message.slice(0, 30));
+        }
+      }
+      const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      this.balanceStatusBar.text = "$(credit-card) 余额: 不支持";
+      this.balanceStatusBar.tooltip = `无法获取余额 (${host})\n${errors.join('\n')}\n${now}\n点击刷新`;
+    } catch (err) {
+      // 兜底：任何未预期的同步/异步错误都不得逃逸为 unhandled rejection
+      console.error('[Devin BYOK Plus] fetchApiBalance 异常:', err?.message || err);
+      try {
+        this.balanceStatusBar.text = "$(credit-card) 余额: 查询异常";
+        this.balanceStatusBar.tooltip = "余额查询发生异常\n点击重试";
+      } catch (_) { /* 状态栏不可用时静默忽略 */ }
+    }
+  }
+  _parseBalance(json) {
+    if (!json || typeof json !== 'object') return null;
+    // NewAPI /api/user/self: {"success":true,"data":{"quota":5000000,...}}
+    if (json.success === true && json.data) {
+      const d = json.data;
+      if (typeof d.quota === 'number' && d.quota > 0) return d.quota / 500000;
+      if (d.total_available != null) return parseFloat(d.total_available);
+      if (d.balance != null) return parseFloat(d.balance);
+    }
+    // 通用字段（原始工作逻辑）
+    if (json.total_available != null) return parseFloat(json.total_available);
+    if (json.balance != null) return parseFloat(json.balance);
+    if (json.data?.total_available != null) return parseFloat(json.data.total_available);
+    if (json.data?.balance != null) return parseFloat(json.data.balance);
+    // quota 字段（兜底）
+    if (typeof json.quota === 'number' && json.quota > 0) return json.quota / 500000;
+    if (typeof json.data?.quota === 'number' && json.data.quota > 0) return json.data.quota / 500000;
+    return null;
+  }
+  startBalanceTimer() {
+    this.fetchApiBalance();
+    this.balanceTimer = setInterval(() => this.fetchApiBalance(), 2 * 60 * 1000);
+  }
+  stopBalanceTimer() {
+    if (this.balanceTimer) {
+      clearInterval(this.balanceTimer);
+      this.balanceTimer = null;
+    }
+  }
   dispose() {
+    this.stopBalanceTimer();
     this.stop();
   }
 }

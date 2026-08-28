@@ -24,6 +24,14 @@
             <label>方案名称</label>
             <input type="text" id="cfgProfileName" placeholder="方案名称" autocomplete="off">
         </div>
+        <div class="fg">
+            <label title="NewAPI/One-API 的登录令牌，用于查询余额。与 API Key 不同，这是你登录控制台后获得的 Token。">访问令牌 <span class="hint">（查余额用，可选）</span></label>
+            <input type="password" id="cfgBalanceToken" placeholder="NewAPI 登录令牌（用于 /api/user/self 余额查询）" autocomplete="off">
+        </div>
+        <div class="fg">
+            <label title="NewAPI/One-API 的用户数字 ID，配合 API Key 查询余额（Authorization: Bearer apiKey + New-Api-User: userId）">用户 ID <span class="hint">（查余额用，可选）</span></label>
+            <input type="text" id="cfgUserId" placeholder="例如 562" autocomplete="off">
+        </div>
         <div class="byok-grid">
     <!-- BYOK #1 配置卡片 -->
     <div class="byok-card byok1-stripe">
@@ -44,7 +52,8 @@
                 <button type="button" class="btn btn-s sm" data-ws-action="fetchModels" data-ws-slot="1" style="padding:4px 8px">加载模型</button>
             </div>
             <div class="fg" id="cfgByok1ThinkingEffortRow"><label id="cfgByok1ThinkingLabel">{{byok1ThinkingLabel}}</label><select id="cfgByok1ThinkingEffort">{{byok1ThinkingOptions}}</select></div>
-            <div class="fg" id="cfgByok1ServiceTierRow"><label title="GPT 专用：开启后向 OpenAI 请求体写入 service_tier=fast，启用优先级通道">GPT Fast Mode</label><select id="cfgByok1ServiceTier">{{byok1ServiceTierOptions}}</select></div>
+            <div class="fg" id="cfgByok1ServiceTierRow"><label title="GPT 专用：向 OpenAI 请求体写入 service_tier。Priority=官方优先处理通道；Fast=部分网关的快速模式；默认不写该字段">GPT Processing Tier</label><select id="cfgByok1ServiceTier">{{byok1ServiceTierOptions}}</select></div>
+            <div class="fg {{byok1ReasoningModeRowHidden}}" id="cfgByok1ReasoningModeRow"><label title="GPT-5.6 专用：向 OpenAI 请求体写入 reasoning.mode（standard/pro）">推理模式</label><select id="cfgByok1ReasoningMode">{{byok1ReasoningModeOptions}}</select></div>
             <div id="modelFetchStatus1" style="font-size:10px;color:{{textColor}}"></div>
         </div>
     </div>
@@ -68,7 +77,8 @@
                 <button type="button" class="btn btn-s sm" data-ws-action="fetchModels" data-ws-slot="2" style="padding:4px 8px">加载模型</button>
             </div>
             <div class="fg" id="cfgByok2ThinkingEffortRow"><label id="cfgByok2ThinkingLabel">{{byok2ThinkingLabel}}</label><select id="cfgByok2ThinkingEffort">{{byok2ThinkingOptions}}</select></div>
-            <div class="fg" id="cfgByok2ServiceTierRow"><label title="GPT 专用：开启后向 OpenAI 请求体写入 service_tier=fast，启用优先级通道">GPT Fast Mode</label><select id="cfgByok2ServiceTier">{{byok2ServiceTierOptions}}</select></div>
+            <div class="fg" id="cfgByok2ServiceTierRow"><label title="GPT 专用：向 OpenAI 请求体写入 service_tier。Priority=官方优先处理通道；Fast=部分网关的快速模式；默认不写该字段">GPT Processing Tier</label><select id="cfgByok2ServiceTier">{{byok2ServiceTierOptions}}</select></div>
+            <div class="fg {{byok2ReasoningModeRowHidden}}" id="cfgByok2ReasoningModeRow"><label title="GPT-5.6 专用：向 OpenAI 请求体写入 reasoning.mode（standard/pro）">推理模式</label><select id="cfgByok2ReasoningMode">{{byok2ReasoningModeOptions}}</select></div>
             <div id="modelFetchStatus2" style="font-size:10px;color:{{textColor}}"></div>
         </div>
     </div>
@@ -92,7 +102,8 @@
                 <button type="button" class="btn btn-s sm" data-ws-action="fetchModels" data-ws-slot="3" style="padding:4px 8px">加载模型</button>
             </div>
             <div class="fg" id="cfgByok3ThinkingEffortRow"><label id="cfgByok3ThinkingLabel">{{byok3ThinkingLabel}}</label><select id="cfgByok3ThinkingEffort">{{byok3ThinkingOptions}}</select></div>
-            <div class="fg" id="cfgByok3ServiceTierRow"><label title="GPT 专用：开启后向 OpenAI 请求体写入 service_tier=fast，启用优先级通道">GPT Fast Mode</label><select id="cfgByok3ServiceTier">{{byok3ServiceTierOptions}}</select></div>
+            <div class="fg" id="cfgByok3ServiceTierRow"><label title="GPT 专用：向 OpenAI 请求体写入 service_tier。Priority=官方优先处理通道；Fast=部分网关的快速模式；默认不写该字段">GPT Processing Tier</label><select id="cfgByok3ServiceTier">{{byok3ServiceTierOptions}}</select></div>
+            <div class="fg {{byok3ReasoningModeRowHidden}}" id="cfgByok3ReasoningModeRow"><label title="GPT-5.6 专用：向 OpenAI 请求体写入 reasoning.mode（standard/pro）">推理模式</label><select id="cfgByok3ReasoningMode">{{byok3ReasoningModeOptions}}</select></div>
             <div id="modelFetchStatus3" style="font-size:10px;color:{{textColor}}"></div>
         </div>
     </div>
@@ -116,7 +127,8 @@
                 <button type="button" class="btn btn-s sm" data-ws-action="fetchModels" data-ws-slot="4" style="padding:4px 8px">加载模型</button>
             </div>
             <div class="fg" id="cfgByok4ThinkingEffortRow"><label id="cfgByok4ThinkingLabel">{{byok4ThinkingLabel}}</label><select id="cfgByok4ThinkingEffort">{{byok4ThinkingOptions}}</select></div>
-            <div class="fg" id="cfgByok4ServiceTierRow"><label title="GPT 专用：开启后向 OpenAI 请求体写入 service_tier=fast，启用优先级通道">GPT Fast Mode</label><select id="cfgByok4ServiceTier">{{byok4ServiceTierOptions}}</select></div>
+            <div class="fg" id="cfgByok4ServiceTierRow"><label title="GPT 专用：向 OpenAI 请求体写入 service_tier。Priority=官方优先处理通道；Fast=部分网关的快速模式；默认不写该字段">GPT Processing Tier</label><select id="cfgByok4ServiceTier">{{byok4ServiceTierOptions}}</select></div>
+            <div class="fg {{byok4ReasoningModeRowHidden}}" id="cfgByok4ReasoningModeRow"><label title="GPT-5.6 专用：向 OpenAI 请求体写入 reasoning.mode（standard/pro）">推理模式</label><select id="cfgByok4ReasoningMode">{{byok4ReasoningModeOptions}}</select></div>
             <div id="modelFetchStatus4" style="font-size:10px;color:{{textColor}}"></div>
         </div>
     </div>
@@ -137,8 +149,16 @@
             <input type="text" id="cfgOpenaiPath" value="{{openaiPath}}" placeholder="/v1/responses">
         </div>
         <div class="fg">
-            <label>最大 Token</label>
-            <input type="number" id="cfgMaxTokens" value="{{maxTokens}}" placeholder="64000">
+            <label title="单次回复的输出上限（对应 API 的 max_tokens），不是上下文窗口。设得高于模型经网关的实际输出上限会导致生成中途被截断（工具参数 JSON 不完整、重试无效）。">最大 Token <span class="hint">（单次输出上限）</span></label>
+            <select id="cfgMaxTokensPreset" title="选择常用档位，或选「自定义」手动填写">{{maxTokensPresetOptions}}</select>
+            <input type="number" id="cfgMaxTokens" class="{{maxTokensCustomHidden}}" style="margin-top:6px" value="{{maxTokens}}" placeholder="32768" min="1" max="1048576">
+            <div class="set-row-hint {{maxTokensWarnClass}}" id="cfgMaxTokensHint" style="margin-top:4px">{{maxTokensHint}}</div>
+        </div>
+        <div class="fg">
+            <label title="仅影响 Devin 界面显示的上下文额度（模型卡片的 context 与对话框的上下文进度条）。不发往上游 API，与「最大 Token」是两个独立概念。">上下文窗口 <span class="hint">（仅影响 Devin 显示）</span></label>
+            <select id="cfgContextWindowPreset" title="选择常用档位，或选「自定义」手动填写">{{contextWindowPresetOptions}}</select>
+            <input type="number" id="cfgContextWindow" class="{{contextWindowCustomHidden}}" style="margin-top:6px" value="{{contextWindow}}" placeholder="200000" min="1" max="10000000">
+            <div class="set-row-hint" id="cfgContextWindowHint" style="margin-top:4px">{{contextWindowHint}}</div>
         </div>
         <div class="fg" style="margin-bottom:0">
             <label>完成超时（毫秒）</label>

@@ -332,6 +332,44 @@
     }
   }
 
+  /* ========== 设置行（卡片内的「标签 + 控件」统一模式） ========== */
+  /* 标签在左、控件在右，控件右对齐后多行之间垂直对齐；说明文字另起一行占满宽度，
+     避免挤在控件旁边被压窄或换行 */
+  .set-row {
+    @apply flex items-start justify-between gap-2 py-1.5;
+  }
+  .set-row + .set-row {
+    @apply border-t border-vsborder;
+  }
+  .set-row-main {
+    @apply flex flex-col gap-0.5 min-w-0 flex-1;
+  }
+  .set-row-label {
+    @apply text-[11px] text-vsinputfg font-medium leading-tight;
+  }
+  .set-row-hint {
+    @apply text-[10px] text-vsdesc leading-snug;
+  }
+  .set-row-hint.warn {
+    @apply text-amber-400/90;
+  }
+  .set-row-ctl {
+    @apply flex-shrink-0 flex items-center pt-0.5;
+  }
+
+  /* 卡片内的次级分区：一条细分隔线 + 小标题 */
+  .sec {
+    @apply pt-2 mt-2 border-t border-vsborder;
+  }
+  .sec-label {
+    @apply text-[9px] text-vsdesc font-semibold uppercase tracking-wider mb-1.5;
+  }
+
+  /* 主操作按钮占满整行，建立明确的视觉层级 */
+  .btn-block {
+    @apply w-full justify-center;
+  }
+
   /* ========== 其他组件 ========== */
   .row {
     @apply flex items-center gap-1.5;
@@ -553,6 +591,54 @@
   }
   .patch-path b {
     @apply text-vslink font-bold;
+  }
+
+  .plugin-info {
+    @apply grid gap-2;
+  }
+  .plugin-info-row {
+    @apply border border-vsborder rounded-md px-2 py-1.5 bg-vsinput;
+  }
+  .plugin-info-row b {
+    @apply block text-vslink text-[9px] font-bold uppercase tracking-wide mb-1;
+  }
+  .plugin-info-row code {
+    @apply text-vsfg font-mono text-[10px] leading-snug break-all;
+  }
+  .plugin-info-value {
+    @apply flex items-center gap-1.5 flex-wrap;
+  }
+  /* 可点击的仓库地址 */
+  .plugin-info-link {
+    @apply text-vslink font-mono text-[10px] leading-snug break-all cursor-pointer;
+    @apply underline decoration-dotted underline-offset-2;
+  }
+  .plugin-info-link:hover {
+    @apply text-vsinputfg;
+    text-decoration-style: solid;
+  }
+  /* 版本号后面的「可更新 vX.Y.Z」徽标，点击直达 GitHub */
+  .plugin-update-tag {
+    @apply inline-flex items-center px-1.5 py-0.5 rounded cursor-pointer;
+    @apply text-[9px] font-bold leading-none whitespace-nowrap;
+    background: color-mix(in srgb, var(--vscode-button-background, #0d9488) 22%, transparent);
+    border: 1px solid color-mix(in srgb, var(--vscode-button-background, #0d9488) 45%, transparent);
+    color: var(--vscode-textLink-foreground, #4ec9b0);
+  }
+  .plugin-update-tag:hover {
+    background: color-mix(in srgb, var(--vscode-button-background, #0d9488) 38%, transparent);
+  }
+  .plugin-update-tag.hidden {
+    display: none;
+  }
+  .plugin-info-actions {
+    @apply flex gap-1.5 flex-wrap mt-2;
+  }
+  .plugin-update-hint {
+    @apply mt-2 text-vsdesc text-[10px] leading-snug;
+  }
+  .plugin-update-hint.hidden {
+    display: none;
   }
 
   .guide-body {
@@ -833,8 +919,8 @@
 
   .profile-list {
     @apply flex flex-col;
-    max-height: 180px;
-    @apply overflow-y-auto;
+    /* 不设置 max-height，让列表自然扩展，交给外层侧栏统一滚动
+       方案数量较多时（>10 条）才在超出视口时启用局部滚动 */
   }
 
   .profile-item {
@@ -896,6 +982,10 @@
 
   .profile-desc {
     @apply text-[9px] text-vsdesc mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap;
+  }
+  /* 单次输出上限徽标：与主机/模型同行，用弱底色区分 */
+  .profile-desc-tok {
+    @apply ml-1 px-1 rounded bg-vsinput border border-vsborder text-[8px] align-middle;
   }
 
   /* 已配置槽位摘要（弱化显示） */

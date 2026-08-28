@@ -25,6 +25,13 @@ try {
     },
     workspace: {
       openTextDocument: () => undefined,
+      getConfiguration: () => ({
+        get: () => undefined,
+        update: () => Promise.resolve(),
+      }),
+    },
+    ConfigurationTarget: {
+      Global: 1,
     },
     env: {
       clipboard: {
@@ -60,7 +67,10 @@ const profileStore_1 = require('../services/profileStore');
 const diagnostics_1 = require('../services/diagnostics');
 const promptTemplates_1 = require('../services/promptTemplates');
 const environmentProbe_1 = require('../services/environmentProbe');
+const preferredAgent_1 = require('../services/preferredAgent');
+const maxTokens_1 = require('../services/maxTokens');
 const KEY_AUTO_START_PROXY = 'devin-byok-plus.autoStartProxy';
+const KEY_PREFER_CASCADE = 'devin-byok-plus.preferCascadeAgent';
 const KEY_PATCH_EXTENSION_PATH = 'devin-byok-plus.patchExtensionPath';
 const LEGACY_KEY_PATCH_EXTENSION_PATH = 'windsurf-byok-plus.patchExtensionPath';
 const LEGACY_KEY_PATCH_EXTENSION_PATH_2 = 'devin-byok-plus.patchExtensionPath';
@@ -80,6 +90,11 @@ class SidebarProvider {
     this.editingProfileId = null;
     this.proxyManager = tmp1;
     this.versionChecker = versionChecker;
+    if (this.versionChecker) {
+      // 后台定时检查（含激活时那一次）结束后主动推给侧栏，
+      // 否则用户要等下一次 getStatus 才能看到新版本提示
+      this.versionChecker.onDidChange = () => this.postVersionUpdate();
+    }
     this.proxyManager.onLog((arg0) => {
       this.logLines.push(arg0);
       if (this.logLines.length > 200) {
@@ -195,23 +210,55 @@ class SidebarProvider {
       proxy: this.proxyManager.getStatus(),
       patch: this.getPatchStatus(),
       config: this.getEditingScopedConfig(),
+      preferCascade: this.getPreferCascadeState(),
       logs: this.logLines.slice(-50),
       versionUpdate: this.versionChecker ? this.versionChecker.getUpdateInfo() : null,
     });
   }
-  postVersionUpdate() {
+  postVersionUpdate(overrides) {
     if (!this.view || !this.versionChecker) return;
     this.view.webview.postMessage({
       type: 'versionUpdate',
-      versionUpdate: this.versionChecker.getUpdateInfo(),
+      versionUpdate: { ...this.versionChecker.getUpdateInfo(), ...overrides },
     });
+  }
+  /**
+   * 计算「默认 Cascade」开关的展示状态。
+   * 以 Devin 的实际配置为准（用户可能直接在 Devin 设置里改过），
+   * globalState 只用于记住「用户是否显式关闭过」以免每次激活都重新打开。
+   * @returns {{checked:boolean, foreign:string, stale:boolean}}
+   *   stale = 记录声称开启但实际未生效（写入失败/被外部改掉），用于提示用户
+   */
+  getPreferCascadeState() {
+    const stored = this.context.globalState.get(KEY_PREFER_CASCADE);
+    const actual = preferredAgent_1.isCascadePreferred(vscode);
+    const foreign = preferredAgent_1.getForeignPreference(vscode);
+    if (foreign) {
+      // 用户手动指定了别的 agent —— 开关显示关闭，并在提示里说明原因
+      return { checked: false, foreign, stale: false };
+    }
+    if (stored === false) {
+      return { checked: false, foreign: '', stale: false };
+    }
+    // 未记录（首次）或记录为开启：以实际配置为准展示，避免"显示开着但没生效"
+    return { checked: actual, foreign: '', stale: stored === true && !actual };
+  }
+  /**
+   * 把方案投影成 webview 配置，但保留全局项的实际生效值。
+   * 模型列表模式的开关在「控制状态」Tab（常驻可见），不属于方案编辑器；
+   * 编辑非激活方案时若用该方案的值覆盖，开关显示会与实际生效值不符。
+   */
+  profileScopedConfigForView(profile, envConfig = this.proxyManager.readEnvConfig()) {
+    const scoped = this.getModeScopedConfig(profileStore_1.projectToEnvConfig(profile));
+    scoped.MODEL_LIST_MODE = profileStore_1.sanitizeModelListMode(envConfig.MODEL_LIST_MODE);
+    return scoped;
   }
   getEditingScopedConfig() {
     const envConfig = this.proxyManager.readEnvConfig();
     if (this.editingProfileId) {
       const profile = profileStore_1.getProfileById(this.editingProfileId, envConfig);
       if (profile) {
-        return this.getModeScopedConfig(profileStore_1.projectToEnvConfig(profile));
+        return this.profileScopedConfigForView(profile, envConfig);
       }
     }
     return this.getModeScopedConfig(envConfig);
@@ -235,7 +282,7 @@ class SidebarProvider {
     const envConfig = this.proxyManager.readEnvConfig();
     const profile = profileStore_1.getProfileById(this.editingProfileId, envConfig);
     if (!profile) return;
-    const scoped = this.getModeScopedConfig(profileStore_1.projectToEnvConfig(profile));
+    const scoped = this.profileScopedConfigForView(profile, envConfig);
     this.view.webview.postMessage({
       type: 'status',
       proxy: this.proxyManager.getStatus(),
@@ -282,6 +329,9 @@ class SidebarProvider {
     }
     if (!String(tmp1.BYOK1_OPENAI_SERVICE_TIER || '').trim()) {
       tmp1.BYOK1_OPENAI_SERVICE_TIER = tmp1.OPENAI_SERVICE_TIER || '';
+    }
+    if (!String(tmp1.BYOK1_OPENAI_REASONING_MODE || '').trim()) {
+      tmp1.BYOK1_OPENAI_REASONING_MODE = tmp1.OPENAI_REASONING_MODE || '';
     }
     tmp1.ENABLE_COMPLETION_PROXY = this.getCompletionProxyEnvValue(tmp1);
     return tmp1;
@@ -372,8 +422,10 @@ class SidebarProvider {
         inferencePort: norm.INFERENCE_PORT || '',
         anthropicPath: norm.ANTHROPIC_API_PATH || '/v1/messages',
         openaiPath: norm.OPENAI_API_PATH || '/v1/responses',
-        maxTokens: norm.MAX_TOKENS || '64000',
+        maxTokens: String(maxTokens_1.sanitizeMaxTokens(norm.MAX_TOKENS)),
+        contextWindow: String(maxTokens_1.sanitizeContextWindow(norm.CONTEXT_WINDOW)),
         completionTimeout: norm.COMPLETION_TIMEOUT_MS || '12000',
+        modelListMode: profileStore_1.sanitizeModelListMode(norm.MODEL_LIST_MODE),
       },
     };
   }
@@ -951,9 +1003,23 @@ class SidebarProvider {
     ) {
       tmp2.BYOK4_THINKING_EFFORT = '';
     }
+    // reasoning.mode 白名单清洗（GPT-5.6 专用，覆盖 4 槽，对齐上游 v2.6.1）
+    for (const slot of ['BYOK1', 'BYOK2', 'BYOK3', 'BYOK4']) {
+      const key = slot + '_OPENAI_REASONING_MODE';
+      if (!['', 'standard', 'pro'].includes(String(tmp2[key] || '').toLowerCase())) {
+        tmp2[key] = '';
+      }
+    }
     if (!['true', 'false'].includes(tmp2.OPENAI_THINKING_ENABLED || 'false')) {
       tmp2.OPENAI_THINKING_ENABLED = 'false';
     }
+    // 模型列表接管模式白名单清洗，非法值回落到默认的 replace
+    if (!['inject', 'replace', 'off'].includes(String(tmp2.MODEL_LIST_MODE || '').toLowerCase())) {
+      tmp2.MODEL_LIST_MODE = 'replace';
+    }
+    // 输出上限与上下文窗口分别清洗（两者语义不同：前者发往上游 API，后者仅供 Devin 显示）
+    tmp2.MAX_TOKENS = String(maxTokens_1.sanitizeMaxTokens(tmp2.MAX_TOKENS));
+    tmp2.CONTEXT_WINDOW = String(maxTokens_1.sanitizeContextWindow(tmp2.CONTEXT_WINDOW));
     if (!sidebarUtils_1.isValidCompletionTimeoutValue(tmp2.COMPLETION_TIMEOUT_MS)) {
       tmp2.COMPLETION_TIMEOUT_MS = '12000';
     }
@@ -1469,6 +1535,12 @@ class SidebarProvider {
           this.editingProfileId = list.activeId;
         }
         const fields = this.envConfigToProfileFields(tmp03);
+        if (typeof tmp02.balanceToken === 'string') {
+          fields.balanceToken = tmp02.balanceToken.trim();
+        }
+        if (typeof tmp02.userId === 'string') {
+          fields.userId = tmp02.userId.trim();
+        }
         profileStore_1.updateProfile(this.editingProfileId, fields, envConfig);
         // 同步方案名（如果 webview 提供了名字）
         if (profileName) {
@@ -1512,7 +1584,7 @@ class SidebarProvider {
         this.postActionState('config', 'success', '已创建新方案：' + created.name);
         this.postProfileList();
         // 新建后自动打开编辑器
-        const scoped = this.getModeScopedConfig(profileStore_1.projectToEnvConfig(created));
+        const scoped = this.profileScopedConfigForView(created, envConfig);
         if (this.view) {
           this.view.webview.postMessage({
             type: 'openProfileEditor',
@@ -1534,7 +1606,7 @@ class SidebarProvider {
           break;
         }
         this.editingProfileId = pid;
-        const scoped = this.getModeScopedConfig(profileStore_1.projectToEnvConfig(profile));
+        const scoped = this.profileScopedConfigForView(profile, envConfig);
         if (this.view) {
           const activeId = profileStore_1.listProfiles(envConfig).activeId;
           this.view.webview.postMessage({
@@ -1543,6 +1615,8 @@ class SidebarProvider {
             profileName: profile.name,
             isActive: profile.id === activeId,
             config: scoped,
+            balanceToken: profile.balanceToken || '',
+            userId: profile.userId || '',
           });
         }
         this.postProfileList();
@@ -1562,7 +1636,7 @@ class SidebarProvider {
           this.postActionState('config', 'error', '方案不存在');
           break;
         }
-        const scoped = this.getModeScopedConfig(profileStore_1.projectToEnvConfig(profile));
+        const scoped = this.profileScopedConfigForView(profile, envConfig);
         if (this.view) {
           const activeId = profileStore_1.listProfiles(envConfig).activeId;
           this.view.webview.postMessage({
@@ -1596,6 +1670,7 @@ class SidebarProvider {
         profileStore_1.activateProfile(pid, envConfig);
         this.editingProfileId = pid;
         await this.applyProfileToRuntime(profile, false);
+        this.proxyManager.fetchApiBalance();
         this.postProfileList();
         this.refresh();
         break;
@@ -1705,6 +1780,104 @@ class SidebarProvider {
       }
       case 'setAutoStartProxy': {
         await this.context.globalState.update(KEY_AUTO_START_PROXY, tmp02.value === true);
+        break;
+      }
+      case 'setPreferCascadeAgent': {
+        // 「Devin Local」走 ACP 协议 + 独立 CLI，不经过本插件代理，其模型清单里没有
+        // BYOK 条目（显示 None selected）。把 Devin 的 preferredAgent 设为 Cascade
+        // 哨兵值即可让新标签页默认用 Cascade。这写的是 Devin 自身的用户设置。
+        const enabled = tmp02.value === true;
+        await this.context.globalState.update(KEY_PREFER_CASCADE, enabled);
+        try {
+          const result = await preferredAgent_1.applyCascadePreference(vscode, enabled);
+          if (result.skipped && result.foreign) {
+            this.postActionState(
+              'proxy',
+              'success',
+              '检测到你已手动指定默认 Agent 为「' +
+                result.foreign +
+                '」，已保留该设置不做覆盖。如需默认使用 Cascade，请先在 Devin 设置中清除 acp.preferredAgent。'
+            );
+          } else if (enabled) {
+            this.postActionState(
+              'proxy',
+              'success',
+              result.changed
+                ? '已设为默认使用 Cascade。重载窗口后新建会话不再默认 Devin Local。'
+                : '已是默认使用 Cascade。'
+            );
+          } else {
+            this.postActionState(
+              'proxy',
+              'success',
+              result.changed
+                ? '已关闭。新建会话将回到 Devin 的默认行为（通常是 Devin Local）。'
+                : '已关闭。'
+            );
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.postActionState('proxy', 'error', '写入 Devin 默认 Agent 设置失败：' + msg);
+        }
+        this.refresh();
+        break;
+      }
+      case 'setModelListMode': {
+        // 模型列表模式是全局代理行为（非方案级配置），落盘后热更新到运行中的代理，
+        // 无需重启；Devin 侧需要重新拉取 GetUserStatus 才能看到新清单
+        try {
+          const mode = profileStore_1.sanitizeModelListMode(tmp02.value);
+          const envConfig = this.proxyManager.readEnvConfig();
+          if (String(envConfig.MODEL_LIST_MODE || 'replace') === mode) {
+            break;
+          }
+          envConfig.MODEL_LIST_MODE = mode;
+          this.proxyManager.writeEnvConfig(envConfig);
+
+          // 同步写回当前方案，避免下次切换方案时被旧值覆盖
+          const list = profileStore_1.listProfiles(envConfig);
+          if (list.activeId) {
+            const active = profileStore_1.getProfileById(list.activeId, envConfig);
+            if (active) {
+              profileStore_1.updateProfile(
+                list.activeId,
+                {
+                  advanced: {
+                    ...active.advanced,
+                    modelListMode: mode,
+                  },
+                },
+                envConfig
+              );
+            }
+          }
+
+          const label =
+            mode === 'replace' ? '替换（只显示 BYOK 槽位）'
+            : mode === 'off' ? '关闭（不接管清单）'
+            : '注入（官方模型 + BYOK 槽位）';
+          const status = this.proxyManager.getStatus();
+          if (status.running) {
+            const result = await this.proxyManager.reloadRuntimeConfig(envConfig);
+            this.postActionState(
+              'proxy',
+              result.errors.length > 0 ? 'error' : 'success',
+              result.errors.length > 0
+                ? '模型列表模式已保存为「' + label + '」，但热更新失败：' + result.errors.join('；')
+                : '模型列表模式已切换为「' + label + '」。在 Devin 中重新打开模型下拉框即可看到变化。'
+            );
+          } else {
+            this.postActionState(
+              'proxy',
+              'success',
+              '模型列表模式已保存为「' + label + '」，启动代理后生效。'
+            );
+          }
+          this.refresh();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.postActionState('proxy', 'error', '切换模型列表模式失败：' + msg);
+        }
         break;
       }
       case 'maintenanceTools': {
@@ -2021,8 +2194,17 @@ class SidebarProvider {
       }
       case 'checkVersionUpdate': {
         if (this.versionChecker) {
-          await this.versionChecker.checkForUpdates();
+          // force=true：用户手动点按钮时跳过 1 小时节流，否则点了没反应
+          this.postVersionUpdate({ checking: true });
+          const info = await this.versionChecker.checkForUpdates(true);
           this.postVersionUpdate();
+          if (info.error) {
+            await vscode.window.showWarningMessage(`检查更新失败：${info.error}`);
+          } else if (!info.isNewer) {
+            await vscode.window.showInformationMessage(
+              `已是最新版本 v${info.currentVersion}`
+            );
+          }
         }
         break;
       }
@@ -2030,6 +2212,14 @@ class SidebarProvider {
         const url = tmp02.url || (this.versionChecker && this.versionChecker.getUpdateInfo().releaseUrl);
         if (url) {
           await vscode.env.openExternal(vscode.Uri.parse(url));
+        }
+        break;
+      }
+      case 'openExternalUrl': {
+        const raw = typeof tmp02.url === 'string' ? tmp02.url.trim() : '';
+        // 只放行 http(s)，避免 webview 传入 file:/command: 等协议
+        if (/^https?:\/\//i.test(raw)) {
+          await vscode.env.openExternal(vscode.Uri.parse(raw));
         }
         break;
       }
@@ -2049,6 +2239,12 @@ class SidebarProvider {
     const tmp3 = patchManager_1.PatchManager.loopbackApiUrl(tmp02.hybridPort);
     const tmp4 = patchManager_1.PatchManager.loopbackApiUrl(tmp02.inferencePort);
     const tmp5 = this.context.globalState.get(KEY_AUTO_START_PROXY) === true;
+    // 开关状态以 Devin 的实际配置为准（用户可能在 Devin 设置里直接改过），
+    // 默认开启：首次使用（globalState 未记录且未被手动指定其他 agent）时视为开
+    const preferCascadeState = this.getPreferCascadeState();
+    const preferCascadeChecked = preferCascadeState.checked;
+    const preferCascadeForeign = preferCascadeState.foreign;
+    const preferCascadeStale = preferCascadeState.stale;
     const tmp6 = tmp1.path
       ? tmp1.path.replace(/\\/g, '/').split('/').slice(-4).join('/')
       : '未找到';
@@ -2124,6 +2320,9 @@ class SidebarProvider {
       tmp3,
       tmp4,
       tmp5,
+      preferCascadeChecked,
+      preferCascadeForeign,
+      preferCascadeStale,
       tmp6,
       tmp7,
       tmp8,
@@ -2164,7 +2363,95 @@ class SidebarProvider {
       tmp34,
       tmp35,
       tmp36,
+      pluginVersion: this.getInstalledVersion(),
+      pluginGitRemote: this.getGitRemoteUrl(),
+      pluginRepoUrl: this.getRepoHomepageUrl(),
     });
+  }
+  getExtensionPackageJson() {
+    const tmp02 = this.context?.extension?.packageJSON;
+    if (tmp02 && typeof tmp02 === 'object') {
+      return tmp02;
+    }
+    try {
+      const tmp1 = path.join(this.context.extensionPath, 'package.json');
+      return JSON.parse(fs.readFileSync(tmp1, 'utf8'));
+    } catch {
+      return {};
+    }
+  }
+  getInstalledVersion() {
+    const tmp02 = this.getExtensionPackageJson();
+    return typeof tmp02.version === 'string' && tmp02.version.trim() ? tmp02.version.trim() : 'unknown';
+  }
+  findGitRoot(tmp02) {
+    let tmp1 = tmp02 || this.context.extensionPath || process.cwd();
+    for (let tmp2 = 0; tmp2 < 8; tmp2++) {
+      const tmp3 = path.join(tmp1, '.git');
+      if (fs.existsSync(tmp3)) {
+        return tmp1;
+      }
+      const tmp4 = path.dirname(tmp1);
+      if (tmp4 === tmp1) {
+        break;
+      }
+      tmp1 = tmp4;
+    }
+    return '';
+  }
+  /**
+   * 可在浏览器打开的仓库主页。
+   * git 远端可能是 git@github.com:owner/repo.git 这类不能直接打开的形式，
+   * 统一归一化成 https://github.com/owner/repo。
+   */
+  getRepoHomepageUrl() {
+    const fallback = this.versionChecker?.getRepoUrl?.() || 'https://github.com/jornlin/devin-byok-plus';
+    const candidates = [this.getExtensionPackageJson().homepage, this.getGitRemoteUrl()];
+
+    for (const raw of candidates) {
+      if (typeof raw !== 'string' || !raw.trim()) continue;
+      const normalized = this.normalizeGitUrl(raw.trim());
+      if (normalized) return normalized;
+    }
+    return fallback;
+  }
+
+  normalizeGitUrl(url) {
+    let out = url
+      .replace(/^git\+/, '')
+      .replace(/^ssh:\/\/git@/, 'https://')
+      .replace(/^git:\/\//, 'https://');
+    // scp 形式：git@host:owner/repo(.git)
+    const scp = out.match(/^[\w.-]+@([\w.-]+):(.+)$/);
+    if (scp) {
+      out = `https://${scp[1]}/${scp[2]}`;
+    }
+    // ssh.github.com 是 SSH-over-443 的入口，网页版要用 github.com
+    out = out.replace(/^https:\/\/ssh\.github\.com\//, 'https://github.com/');
+    out = out.replace(/\.git$/, '').replace(/\/+$/, '');
+    return /^https?:\/\/.+\/.+/i.test(out) ? out : '';
+  }
+
+  getGitRemoteUrl() {
+    const tmp02 = this.findGitRoot(this.context.extensionPath);
+    if (tmp02) {
+      try {
+        const tmp1 = path.join(tmp02, '.git', 'config');
+        const tmp2 = fs.readFileSync(tmp1, 'utf8');
+        const tmp3 = tmp2.match(/\[remote "origin"\][\s\S]*?\n\s*url\s*=\s*([^\r\n]+)/);
+        if (tmp3 && tmp3[1]) {
+          return tmp3[1].trim();
+        }
+      } catch {}
+    }
+    const tmp4 = this.getExtensionPackageJson().repository;
+    if (typeof tmp4 === 'string') {
+      return tmp4.trim();
+    }
+    if (tmp4 && typeof tmp4.url === 'string') {
+      return tmp4.url.trim();
+    }
+    return '未配置';
   }
 }
 exports.SidebarProvider = SidebarProvider;

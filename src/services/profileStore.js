@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { sanitizeMaxTokens, sanitizeContextWindow } = require('./maxTokens');
 
 const PROFILES_FILE = 'profiles.json';
 
@@ -30,10 +31,22 @@ function sanitizeProtocol(value) {
   return PROTOCOL_VALUES.includes(normalized) ? normalized : '';
 }
 
+const MODEL_LIST_MODE_VALUES = ['inject', 'replace', 'off'];
+
+/**
+ * 模型列表接管模式清洗。缺省/非法值回落 inject（保留官方模型 + 追加 BYOK 槽位）。
+ */
+function sanitizeModelListMode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return MODEL_LIST_MODE_VALUES.includes(normalized) ? normalized : 'replace';
+}
+
 function createDefaultProfile(envConfig = {}) {
   return {
     id: generateProfileId(),
     name: '方案 1',
+    balanceToken: envConfig.BYOK1_BALANCE_TOKEN || '',
+    userId: envConfig.BYOK1_USER_ID || '',
     byok1: {
       host: envConfig.BYOK1_ANTHROPIC_API_HOST || '',
       key: envConfig.BYOK1_ANTHROPIC_API_KEY || '',
@@ -75,8 +88,10 @@ function createDefaultProfile(envConfig = {}) {
       inferencePort: envConfig.INFERENCE_PORT || '',
       anthropicPath: envConfig.ANTHROPIC_API_PATH || '/v1/messages',
       openaiPath: envConfig.OPENAI_API_PATH || '/v1/responses',
-      maxTokens: envConfig.MAX_TOKENS || '64000',
+      maxTokens: String(sanitizeMaxTokens(envConfig.MAX_TOKENS)),
+      contextWindow: String(sanitizeContextWindow(envConfig.CONTEXT_WINDOW)),
       completionTimeout: envConfig.COMPLETION_TIMEOUT_MS || '12000',
+      modelListMode: sanitizeModelListMode(envConfig.MODEL_LIST_MODE),
     },
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -131,6 +146,8 @@ function normalizeProfile(profile) {
   if (!profile || typeof profile !== 'object') {
     return profile;
   }
+  if (profile.balanceToken === undefined) profile.balanceToken = '';
+  if (profile.userId === undefined) profile.userId = '';
   profile.byok1 = normalizeSlot(profile.byok1);
   profile.byok2 = normalizeSlot(profile.byok2);
   profile.byok3 = normalizeSlot(profile.byok3);
@@ -225,6 +242,9 @@ function listProfiles(envConfig) {
         byok4Protocol: resolveEffectiveProtocol(b4),
         byok4ProtocolManual: sanitizeProtocol(b4.protocol),
         byok4ThinkingEffort: b4.thinkingEffort || '',
+        // 方案列表显示单次输出上限，便于一眼区分不同方案的配置
+        maxTokens: sanitizeMaxTokens((p.advanced || {}).maxTokens),
+        contextWindow: sanitizeContextWindow((p.advanced || {}).contextWindow),
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
       };
@@ -396,8 +416,10 @@ function projectToEnvConfig(profile) {
 
     ANTHROPIC_API_PATH: adv.anthropicPath || '/v1/messages',
     OPENAI_API_PATH: adv.openaiPath || '/v1/responses',
-    MAX_TOKENS: adv.maxTokens || '64000',
+    MAX_TOKENS: String(sanitizeMaxTokens(adv.maxTokens)),
+    CONTEXT_WINDOW: String(sanitizeContextWindow(adv.contextWindow)),
     COMPLETION_TIMEOUT_MS: adv.completionTimeout || '12000',
+    MODEL_LIST_MODE: sanitizeModelListMode(adv.modelListMode),
 
     HYBRID_PORT: adv.hybridPort || '',
     INFERENCE_PORT: adv.inferencePort || '',
@@ -418,6 +440,7 @@ module.exports = {
   ensureProfilesExist,
   createDefaultProfile,
   sanitizeProtocol,
+  sanitizeModelListMode,
   detectModelProtocol,
   resolveEffectiveProtocol,
 };

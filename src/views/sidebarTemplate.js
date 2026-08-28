@@ -5,6 +5,7 @@
 
 const { esc, formatUptime } = require('./sidebarHtml');
 const thinkingEffort = require('../services/thinkingEffort');
+const maxTokensUtil = require('../services/maxTokens');
 const { renderSidebar } = require('./templates');
 
 /**
@@ -28,6 +29,45 @@ function renderSidebarHtml(ctx) {
   const byok3Configured = !!(tmp33a || tmp33b);
   const byok4Configured = !!(tmp33e || tmp33f);
 
+  // 最大 Token 预设下拉：命中档位则选中，否则落到「自定义」并展开输入框
+  const currentMaxTokens = maxTokensUtil.sanitizeMaxTokens(tmp2 && tmp2.MAX_TOKENS);
+  const isCustomMaxTokens = !maxTokensUtil.isPresetMaxTokens(currentMaxTokens);
+  const buildMaxTokensPresetOptions = () => {
+    const opts = maxTokensUtil.MAX_TOKENS_PRESETS.map(
+      (p) =>
+        `<option value="${p.value}"${!isCustomMaxTokens && p.value === currentMaxTokens ? ' selected' : ''}>${esc(p.label)}</option>`
+    );
+    opts.push(`<option value="custom"${isCustomMaxTokens ? ' selected' : ''}>自定义…</option>`);
+    return opts.join('');
+  };
+
+  // 上下文窗口预设下拉（写入模型条目 f18，仅影响 Devin 显示的额度）
+  const currentContextWindow = maxTokensUtil.sanitizeContextWindow(tmp2 && tmp2.CONTEXT_WINDOW);
+  const isCustomContextWindow = !maxTokensUtil.isPresetContextWindow(currentContextWindow);
+  const buildContextWindowPresetOptions = () => {
+    const opts = maxTokensUtil.CONTEXT_WINDOW_PRESETS.map(
+      (p) =>
+        `<option value="${p.value}"${!isCustomContextWindow && p.value === currentContextWindow ? ' selected' : ''}>${esc(p.label)}</option>`
+    );
+    opts.push(`<option value="custom"${isCustomContextWindow ? ' selected' : ''}>自定义…</option>`);
+    return opts.join('');
+  };
+
+  // 模型列表接管模式 select 选项（回填当前值，默认 replace）
+  const buildModelListModeOptions = (selected) => {
+    const current = ['inject', 'replace', 'off'].includes(String(selected || '').toLowerCase())
+      ? String(selected).toLowerCase()
+      : 'replace';
+    const opts = [
+      ['replace', '替换 · 只显示 BYOK 槽位'],
+      ['inject', '注入 · 官方模型 + BYOK 槽位'],
+      ['off', '关闭 · 不接管模型列表'],
+    ];
+    return opts
+      .map(([v, label]) => `<option value="${v}"${current === v ? ' selected' : ''}>${esc(label)}</option>`)
+      .join('');
+  };
+
   // 协议 select 选项渲染（回填手动选择的值）
   const buildProtocolOptions = (selected) => {
     const opts = [
@@ -42,12 +82,29 @@ function renderSidebarHtml(ctx) {
     }).join('');
   };
 
-  // GPT Fast Mode (service_tier) 下拉选项：只接受 fast 或空
+  // GPT Processing Tier (service_tier) 下拉选项：接受 fast / priority 或空
   const buildOpenAIServiceTierOptions = (selected) => {
-    const cur = String(selected || '').trim().toLowerCase() === 'fast' ? 'fast' : '';
+    const norm = String(selected || '').trim().toLowerCase();
+    const cur = ['fast', 'priority'].includes(norm) ? norm : '';
     const opts = [
       ['', '默认 · 不覆盖 service_tier'],
       ['fast', 'Fast · service_tier=fast'],
+      ['priority', 'Priority · service_tier=priority'],
+    ];
+    return opts.map(([v, label]) => {
+      const sel = cur === v ? ' selected' : '';
+      return `<option value="${esc(v)}"${sel}>${esc(label)}</option>`;
+    }).join('');
+  };
+
+  // GPT-5.6 推理模式 (reasoning.mode) 下拉选项：接受 standard / pro 或空
+  const buildOpenAIReasoningModeOptions = (selected) => {
+    const norm = String(selected || '').trim().toLowerCase();
+    const cur = ['standard', 'pro'].includes(norm) ? norm : '';
+    const opts = [
+      ['', '默认 · 不覆盖 reasoning.mode'],
+      ['standard', 'Standard · reasoning.mode=standard'],
+      ['pro', 'Pro · reasoning.mode=pro'],
     ];
     return opts.map(([v, label]) => {
       const sel = cur === v ? ' selected' : '';
@@ -65,6 +122,18 @@ function renderSidebarHtml(ctx) {
   const byok2ServiceTier = String(ctx.tmp2?.BYOK2_OPENAI_SERVICE_TIER || '').trim();
   const byok3ServiceTier = String(ctx.tmp2?.BYOK3_OPENAI_SERVICE_TIER || '').trim();
   const byok4ServiceTier = String(ctx.tmp2?.BYOK4_OPENAI_SERVICE_TIER || '').trim();
+
+  // Slot 级 reasoning.mode 取值：slot#1 回退顶层 OPENAI_REASONING_MODE
+  const byok1ReasoningMode = String(ctx.tmp2?.BYOK1_OPENAI_REASONING_MODE || ctx.tmp2?.OPENAI_REASONING_MODE || '').trim();
+  const byok2ReasoningMode = String(ctx.tmp2?.BYOK2_OPENAI_REASONING_MODE || '').trim();
+  const byok3ReasoningMode = String(ctx.tmp2?.BYOK3_OPENAI_REASONING_MODE || '').trim();
+  const byok4ReasoningMode = String(ctx.tmp2?.BYOK4_OPENAI_REASONING_MODE || '').trim();
+
+  // 各槽位 reasoning.mode 行的显隐：仅当模型为 gpt-5.6 系列时显示
+  const byok1IsGpt56 = thinkingEffort.isGpt56Model(tmp27);
+  const byok2IsGpt56 = thinkingEffort.isGpt56Model(tmp30);
+  const byok3IsGpt56 = thinkingEffort.isGpt56Model(tmp33c);
+  const byok4IsGpt56 = thinkingEffort.isGpt56Model(tmp33g);
 
   // 准备模板数据
   const templateData = {
@@ -110,6 +179,9 @@ function renderSidebarHtml(ctx) {
     sysPromptOverride: tmp9 ? 'true' : '',
     sysPromptPath: esc(tmp8),
 
+    // 模型列表接管模式
+    modelListModeOptions: buildModelListModeOptions(tmp2 && tmp2.MODEL_LIST_MODE),
+
     // 有效 provider：手动协议优先，否则按模型名自动识别
     // 值：'claude' / 'gpt' / 'gemini' / null
     // BYOK #1 配置数据
@@ -120,10 +192,12 @@ function renderSidebarHtml(ctx) {
       thinkingEffort.protocolToThinkingProvider(byok1Protocol) || thinkingEffort.detectModelProvider(tmp27)
     )),
     byok1ThinkingOptions: byok1Protocol
-      ? thinkingEffort.buildThinkingEffortOptionsHtmlForProvider(thinkingEffort.protocolToThinkingProvider(byok1Protocol), tmp31)
+      ? thinkingEffort.buildThinkingEffortOptionsHtmlForProvider(thinkingEffort.protocolToThinkingProvider(byok1Protocol), tmp31, tmp27)
       : thinkingEffort.buildThinkingEffortOptionsHtml(tmp27, tmp31),
     byok1ProtocolOptions: buildProtocolOptions(byok1Protocol),
     byok1ServiceTierOptions: buildOpenAIServiceTierOptions(byok1ServiceTier),
+    byok1ReasoningModeOptions: buildOpenAIReasoningModeOptions(byok1ReasoningMode),
+    byok1ReasoningModeRowHidden: byok1IsGpt56 ? '' : 'hidden',
     // BYOK #1 卡片状态（默认折叠）
     byok1HeadCollapsed: 'collapsed',
     byok1BodyHidden: 'hidden',
@@ -138,10 +212,12 @@ function renderSidebarHtml(ctx) {
       thinkingEffort.protocolToThinkingProvider(byok2Protocol) || thinkingEffort.detectModelProvider(tmp30)
     )),
     byok2ThinkingOptions: byok2Protocol
-      ? thinkingEffort.buildThinkingEffortOptionsHtmlForProvider(thinkingEffort.protocolToThinkingProvider(byok2Protocol), tmp32)
+      ? thinkingEffort.buildThinkingEffortOptionsHtmlForProvider(thinkingEffort.protocolToThinkingProvider(byok2Protocol), tmp32, tmp30)
       : thinkingEffort.buildThinkingEffortOptionsHtml(tmp30, tmp32),
     byok2ProtocolOptions: buildProtocolOptions(byok2Protocol),
     byok2ServiceTierOptions: buildOpenAIServiceTierOptions(byok2ServiceTier),
+    byok2ReasoningModeOptions: buildOpenAIReasoningModeOptions(byok2ReasoningMode),
+    byok2ReasoningModeRowHidden: byok2IsGpt56 ? '' : 'hidden',
     // BYOK #2 卡片状态（默认折叠）
     byok2HeadCollapsed: 'collapsed',
     byok2BodyHidden: 'hidden',
@@ -156,10 +232,12 @@ function renderSidebarHtml(ctx) {
       thinkingEffort.protocolToThinkingProvider(byok3Protocol) || thinkingEffort.detectModelProvider(tmp33c)
     )),
     byok3ThinkingOptions: byok3Protocol
-      ? thinkingEffort.buildThinkingEffortOptionsHtmlForProvider(thinkingEffort.protocolToThinkingProvider(byok3Protocol), tmp33d)
+      ? thinkingEffort.buildThinkingEffortOptionsHtmlForProvider(thinkingEffort.protocolToThinkingProvider(byok3Protocol), tmp33d, tmp33c)
       : thinkingEffort.buildThinkingEffortOptionsHtml(tmp33c, tmp33d),
     byok3ProtocolOptions: buildProtocolOptions(byok3Protocol),
     byok3ServiceTierOptions: buildOpenAIServiceTierOptions(byok3ServiceTier),
+    byok3ReasoningModeOptions: buildOpenAIReasoningModeOptions(byok3ReasoningMode),
+    byok3ReasoningModeRowHidden: byok3IsGpt56 ? '' : 'hidden',
     // BYOK #3 卡片状态（默认折叠）
     byok3HeadCollapsed: 'collapsed',
     byok3BodyHidden: 'hidden',
@@ -174,10 +252,12 @@ function renderSidebarHtml(ctx) {
       thinkingEffort.protocolToThinkingProvider(byok4Protocol) || thinkingEffort.detectModelProvider(tmp33g)
     )),
     byok4ThinkingOptions: byok4Protocol
-      ? thinkingEffort.buildThinkingEffortOptionsHtmlForProvider(thinkingEffort.protocolToThinkingProvider(byok4Protocol), tmp33h)
+      ? thinkingEffort.buildThinkingEffortOptionsHtmlForProvider(thinkingEffort.protocolToThinkingProvider(byok4Protocol), tmp33h, tmp33g)
       : thinkingEffort.buildThinkingEffortOptionsHtml(tmp33g, tmp33h),
     byok4ProtocolOptions: buildProtocolOptions(byok4Protocol),
     byok4ServiceTierOptions: buildOpenAIServiceTierOptions(byok4ServiceTier),
+    byok4ReasoningModeOptions: buildOpenAIReasoningModeOptions(byok4ReasoningMode),
+    byok4ReasoningModeRowHidden: byok4IsGpt56 ? '' : 'hidden',
     // BYOK #4 卡片状态（默认折叠）
     byok4HeadCollapsed: 'collapsed',
     byok4BodyHidden: 'hidden',
@@ -192,7 +272,24 @@ function renderSidebarHtml(ctx) {
     // 高级路由配置
     anthropicPath: esc(tmp2.ANTHROPIC_API_PATH || '/v1/messages'),
     openaiPath: esc(tmp2.OPENAI_API_PATH || '/v1/responses'),
-    maxTokens: esc(tmp2.MAX_TOKENS || '64000'),
+    maxTokens: String(currentMaxTokens),
+    maxTokensPresetOptions: buildMaxTokensPresetOptions(),
+    // 选了预设时隐藏自定义输入框
+    maxTokensCustomHidden: isCustomMaxTokens ? '' : 'hidden',
+    maxTokensHint:
+      currentMaxTokens > maxTokensUtil.SAFE_MAX_TOKENS_HINT_THRESHOLD
+        ? '当前值 ' +
+          maxTokensUtil.formatTokens(currentMaxTokens) +
+          ' 偏高，超出模型经网关的输出上限会导致生成被截断'
+        : '当前 ' + maxTokensUtil.formatTokens(currentMaxTokens),
+    maxTokensWarnClass:
+      currentMaxTokens > maxTokensUtil.SAFE_MAX_TOKENS_HINT_THRESHOLD ? 'warn' : '',
+
+    contextWindow: String(currentContextWindow),
+    contextWindowPresetOptions: buildContextWindowPresetOptions(),
+    contextWindowCustomHidden: isCustomContextWindow ? '' : 'hidden',
+    contextWindowHint:
+      'Devin 将显示 ' + maxTokensUtil.formatContextWindow(currentContextWindow) + ' 上下文',
     completionTimeout: esc(tmp2.COMPLETION_TIMEOUT_MS || '12000'),
 
     // 颜色变量
@@ -232,8 +329,16 @@ function renderSidebarHtml(ctx) {
     // 控制状态数据
     hybridPort: esc(String(tmp02.hybridPort)),
     inferencePort: esc(String(tmp02.inferencePort)),
-    proxyControlButtons: tmp02.running ? '<button type="button" class="btn btn-d" data-ws-action="stopProxy">停止代理</button>' : '<button type="button" class="btn btn-p" data-ws-action="startProxy" data-ws-mode="both">一键启动</button>',
+    proxyControlButtons: tmp02.running ? '<button type="button" class="btn btn-d btn-block" data-ws-action="stopProxy">停止代理</button>' : '<button type="button" class="btn btn-p btn-block" data-ws-action="startProxy" data-ws-mode="both">一键启动</button>',
     autoStartChecked: tmp5 ? 'checked' : '',
+
+    // 默认使用 Cascade（避免新会话落到 Devin Local —— 那条链路不经过本插件代理）
+    preferCascadeChecked: ctx.preferCascadeChecked ? 'checked' : '',
+    preferCascadeHint: ctx.preferCascadeForeign
+      ? '已手动指定为 ' + esc(ctx.preferCascadeForeign)
+      : ctx.preferCascadeStale
+        ? '未生效，点击重试'
+        : '避免新会话落到 Devin Local',
 
     // 统计数据
     statPort: tmp02.hybridPort,
@@ -242,6 +347,11 @@ function renderSidebarHtml(ctx) {
 
     // 日志内容
     logContent: tmp36,
+
+    // 插件信息卡片
+    pluginVersion: esc(ctx.pluginVersion || 'unknown'),
+    pluginGitRemote: esc(ctx.pluginGitRemote || '未配置'),
+    pluginRepoUrl: esc(ctx.pluginRepoUrl || 'https://github.com/jornlin/devin-byok-plus'),
   };
 
   // 使用模板加载器渲染

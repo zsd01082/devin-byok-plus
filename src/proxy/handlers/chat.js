@@ -14,6 +14,7 @@ import { endOfStreamEnvelope, streamHeaders, wrapEnvelope } from '../connect.js'
 import {
   buildAnthropicThinkingPayload,
   buildGeminiThinkingPayload,
+  correctApiPathForProvider,
   detectModelProvider,
   getByokSlot,
   sanitizeGeminiThinkingEffort,
@@ -29,6 +30,7 @@ import {
   getSlotProtocol,
   getSlotThinkingEffort,
   getSlotServiceTier,
+  getSlotReasoningMode,
 } from './models.js';
 import {
   consumeInjectedMessages,
@@ -213,7 +215,7 @@ function createTimingTracker(arg0, tmp1 = {}, tmp2 = null) {
 }
 function logNoToolsCalled(arg0, arg1, arg2) {
   const tmp3 = Array.isArray(arg2) ? arg2.map((arg02) => arg02 && arg02.name).filter(Boolean) : [];
-  const tmp4 = tmp3.length ? '; enabled=' + tmp3.length + ' [' + tmp3.join(', ') + ']' : '';
+  const tmp4 = tmp3.length ? '; enabled=' + tmp3.length + ' ' + formatToolNameList(tmp3) : '';
   console.log(
     '  🔧 No tools called (' +
       arg0 +
@@ -226,15 +228,15 @@ function logNoToolsCalled(arg0, arg1, arg2) {
   emitStreamStatus('error', arg0 + ' ' + arg1 + '; no tool calls emitted');
   emitChatEnd('error', []);
 }
-function sanitizeLogBody(arg0) {
-  return arg0
+export function sanitizeLogBody(arg0) {
+  return String(arg0 || '')
     .slice(0, 500)
-    .replace(/(?:sk-[a-zA-Z0-9_-]{10,}|Bearer\s+\S+)/g, '[REDACTED]')
-    .replace(/(?:key-[a-zA-Z0-9_-]{10,})/g, '[REDACTED]')
     .replace(
-      /(?:"(?:api[_-]?key|token|secret|password|authorization)":\s*"[^"]{6,}")/gi,
+      /"((?:api[_-]?key|token|secret|password|authorization))"\s*:\s*"[^"]{6,}"/gi,
       '"$1":"[REDACTED]"'
-    );
+    )
+    .replace(/(?:sk-[a-zA-Z0-9_-]{10,}|Bearer\s+[^\s",}]+)/g, '[REDACTED]')
+    .replace(/(?:key-[a-zA-Z0-9_-]{10,})/g, '[REDACTED]');
 }
 function buildProviderErrorMessage(arg0, arg1, arg2) {
   const tmp3 = String(arg2 || '').toLowerCase();
@@ -417,7 +419,12 @@ function resolveEffectiveProvider(model, slot, gptForced = false) {
   if (isGeminiModel(model)) return 'gemini';
   if (isOpenAIModel(model) || gptForced) return 'gpt';
   if (isClaudeModel(model)) return 'claude';
-  return detectModelProvider(model) || 'claude';
+  const detected = detectModelProvider(model);
+  if (detected) return detected;
+  // 无法从模型名/槽位协议推断时，默认走 OpenAI 协议：其 /chat/completions
+  // 兼容范围最广（DeepSeek/Kimi/Qwen/GLM 等第三方网关多以 OpenAI 兼容为主）。
+  // 需要 Anthropic 协议的用户应显式设置 BYOKn_PROTOCOL=anthropic 或使用 claude-* 模型名。
+  return 'gpt';
 }
 function resolveSlotThinkingEffort(arg0, arg1) {
   if (arg0 === 1 || arg0 === 2 || arg0 === 3 || arg0 === 4) {
@@ -433,10 +440,14 @@ function buildThinkingOptions(arg0, arg1, tmp2 = null) {
   const tmp6 = provider === 'claude';
   const tmp7 = provider === 'gemini';
   const tmp8 = provider === 'gpt';
+  const tmp12 =
+    tmp2 === 1 || tmp2 === 2 || tmp2 === 3 || tmp2 === 4
+      ? getSlotReasoningMode(tmp2)
+      : tmp3.openaiReasoningMode || '';
   let tmp9 = false;
   let tmp10 = '';
   if (tmp8) {
-    tmp9 = tmp4 || tmp3.openaiThinkingEnabled === true || !!tmp5;
+    tmp9 = tmp4 || tmp3.openaiThinkingEnabled === true || !!tmp5 || !!tmp12;
     tmp10 = tmp9 ? tmp5 || tmp3.openaiReasoningEffort || '' : '';
   } else if (tmp7) {
     tmp9 = !!sanitizeGeminiThinkingEffort(tmp5) || tmp4 || tmp2 === 2;
@@ -451,6 +462,7 @@ function buildThinkingOptions(arg0, arg1, tmp2 = null) {
   const tmp11 = {
     thinkingEnabled: tmp9,
     reasoningEffort: tmp10,
+    reasoningMode: tmp12,
     thinkingBudget: tmp9
       ? (tmp7
           ? usesGeminiThinkingLevel(arg0)
@@ -725,6 +737,103 @@ function shouldForwardOpenAITools(arg0, arg1) {
   }
   return true;
 }
+function splitToolFilterEnv(...names) {
+  const values = [];
+  for (const name of names) {
+    const raw = process.env[name];
+    if (!raw) {
+      continue;
+    }
+    values.push(
+      ...String(raw)
+        .split(/[,\s;]+/)
+        .map((arg0) => arg0.trim())
+        .filter(Boolean)
+    );
+  }
+  return values;
+}
+function matchesToolPattern(name, patterns, prefixMode = false) {
+  const normalized = String(name || '')
+    .trim()
+    .toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  for (const pattern of patterns) {
+    const candidate = String(pattern || '')
+      .trim()
+      .toLowerCase();
+    if (!candidate) {
+      continue;
+    }
+    if (prefixMode || candidate.endsWith('*')) {
+      const prefix = candidate.replace(/\*+$/g, '');
+      if (prefix && normalized.startsWith(prefix)) {
+        return true;
+      }
+      continue;
+    }
+    if (normalized === candidate) {
+      return true;
+    }
+  }
+  return false;
+}
+function getToolFilterConfig() {
+  const allow = splitToolFilterEnv('BYOK_TOOL_ALLOWLIST', 'TOOL_ALLOWLIST');
+  const deny = splitToolFilterEnv('BYOK_TOOL_DENYLIST', 'TOOL_DENYLIST');
+  const allowPrefixes = splitToolFilterEnv('BYOK_TOOL_ALLOW_PREFIXES', 'TOOL_ALLOW_PREFIXES');
+  const denyPrefixes = splitToolFilterEnv('BYOK_TOOL_DENY_PREFIXES', 'TOOL_DENY_PREFIXES');
+  return {
+    allow,
+    deny,
+    allowPrefixes,
+    denyPrefixes,
+    active:
+      allow.length > 0 ||
+      deny.length > 0 ||
+      allowPrefixes.length > 0 ||
+      denyPrefixes.length > 0,
+  };
+}
+export function filterForwardedTools(tools = []) {
+  if (!Array.isArray(tools) || tools.length === 0) {
+    return [];
+  }
+  const config = getToolFilterConfig();
+  if (!config.active) {
+    return tools;
+  }
+  const hasAllowRules = config.allow.length > 0 || config.allowPrefixes.length > 0;
+  return tools.filter((tool) => {
+    const name = tool?.name || '';
+    const allowed =
+      !hasAllowRules ||
+      matchesToolPattern(name, config.allow) ||
+      matchesToolPattern(name, config.allowPrefixes, true);
+    const denied =
+      matchesToolPattern(name, config.deny) ||
+      matchesToolPattern(name, config.denyPrefixes, true);
+    return allowed && !denied;
+  });
+}
+function formatToolNameList(toolsOrNames = [], limit = 12) {
+  const names = toolsOrNames
+    .map((arg0) => (typeof arg0 === 'string' ? arg0 : arg0?.name))
+    .filter(Boolean);
+  if (names.length === 0) {
+    return '[]';
+  }
+  const shown = names.slice(0, limit);
+  const suffix = names.length > limit ? ', ... +' + (names.length - limit) + ' more' : '';
+  return '[' + shown.join(', ') + suffix + ']';
+}
+function describeToolFilter(originalTools = [], forwardedTools = []) {
+  const originalCount = Array.isArray(originalTools) ? originalTools.length : 0;
+  const forwardedCount = Array.isArray(forwardedTools) ? forwardedTools.length : 0;
+  return originalCount !== forwardedCount ? ' filtered=' + originalCount + '→' + forwardedCount : '';
+}
 function getForwardedToolChoice(arg0, arg1, arg2) {
   if (!arg1 || !arg0 || arg0.length === 0) {
     return undefined;
@@ -839,6 +948,13 @@ function logUpstreamUsage(processor, provider, meta = {}) {
       })
   );
 }
+export function splitSseFrames(buffer) {
+  const parts = String(buffer || '').split(/\r?\n\r?\n/);
+  return {
+    frames: parts.slice(0, -1),
+    remainder: parts[parts.length - 1] || '',
+  };
+}
 function mapChatCompletionsToolChoice(arg0) {
   if (!arg0) {
     return undefined;
@@ -859,7 +975,7 @@ function mapChatCompletionsToolChoice(arg0) {
   }
   return undefined;
 }
-function buildOpenAIResponsesBody({
+export function buildOpenAIResponsesBody({
   systemPrompt: tmp2,
   messages: tmp3,
   tools: tmp4,
@@ -905,7 +1021,10 @@ function buildOpenAIResponsesBody({
       };
       tmp19.reasoning = tmp02;
       if (tmp12?.reasoningEffort) {
-        tmp19.reasoning.effort = thinkingEffortToOpenAIReasoningEffort(tmp12.reasoningEffort);
+        tmp19.reasoning.effort = thinkingEffortToOpenAIReasoningEffort(tmp12.reasoningEffort, tmp6);
+      }
+      if (/^gpt-5\.6(?:-|$)/i.test(tmp6) && tmp12?.reasoningMode) {
+        tmp19.reasoning.mode = tmp12.reasoningMode;
       }
     }
   }
@@ -978,7 +1097,7 @@ export function buildOpenAIChatCompletionsBody({
         }
       }
     } else {
-      const tmp02 = thinkingEffortToOpenAIReasoningEffort(tmp12?.reasoningEffort);
+      const tmp02 = thinkingEffortToOpenAIReasoningEffort(tmp12?.reasoningEffort, tmp6);
       if (tmp02) {
         tmp19.reasoning_effort = tmp02;
       }
@@ -1088,9 +1207,9 @@ function attachOpenAISseStream(
     }
     fn3();
     sseBuffer += tmp1.write(arg03);
-    const tmp110 = sseBuffer.split('\n\n');
-    sseBuffer = tmp110.pop();
-    for (const tmp02 of tmp110) {
+    const tmp110 = splitSseFrames(sseBuffer);
+    sseBuffer = tmp110.remainder;
+    for (const tmp02 of tmp110.frames) {
       processPart(tmp02);
     }
   });
@@ -1242,6 +1361,12 @@ function streamAnthropic(
   retryCount = 0
 ) {
   const tmp12 = getProviderConfig(tmp11).anthropic;
+  // 根据 hostname 自动修正非标准 Anthropic 路径（如 DeepSeek/Kimi 的 /anthropic）
+  const correctedAnthropicPath = correctApiPathForProvider('anthropic', tmp12.host, tmp12.apiPath);
+  if (correctedAnthropicPath !== tmp12.apiPath) {
+    console.log('  🔄 Auto-corrected Anthropic API path: ' + tmp12.apiPath + ' → ' + correctedAnthropicPath);
+    tmp12.apiPath = correctedAnthropicPath;
+  }
   // prompt cache 配置与网关能力检查（网关不支持 cache_control 时自动降级）
   const promptCacheConfig = getPromptCacheConfig();
   const promptCacheKey = buildGatewayCapabilityKey({
@@ -1258,8 +1383,10 @@ function streamAnthropic(
   const promptCacheRejected = !!(
     promptCacheConfig.anthropic && promptCacheCapability?.promptCacheUnsupported
   );
+  // 依据 allow/deny 环境变量过滤转发给上游的工具（不影响历史合成的占位工具）
+  const forwardedTools = filterForwardedTools(tmp4);
   // 补齐工具定义：历史含 tool_use/tool_result 但本次未带 tools 时，合成占位定义以满足 Bedrock toolConfig 要求
-  let effectiveTools = synthesizeToolsFromMessages(tmp3, tmp4);
+  let effectiveTools = synthesizeToolsFromMessages(tmp3, forwardedTools);
   // 若 tool_choice 强制调用某命名工具但其定义缺失，补齐该工具定义并允许转发 tool_choice
   const { tools: ensuredTools, allowToolChoice } = ensureNamedToolChoiceTool(effectiveTools, tmp5);
   // 合成/补齐的占位工具也参与稳定排序，避免逐轮顺序变化破坏 tools 块缓存前缀
@@ -1307,6 +1434,15 @@ function streamAnthropic(
         (tmp10?.reasoningEffort ? ' effort=' + tmp10.reasoningEffort : '')
     : 'off';
   console.log('  🧩 Anthropic/Sub2API thinking: ' + tmp15);
+  if (tmp4 && tmp4.length > 0) {
+    console.log(
+      '  🔧 Anthropic tools enabled: ' +
+        forwardedTools.length +
+        describeToolFilter(tmp4, forwardedTools) +
+        ' ' +
+        formatToolNameList(forwardedTools)
+    );
+  }
   // 启用时对 system/tools/messages 稳定前缀打 cache_control（注入消息作为易变尾部排除）
   const outboundPayload = promptCacheEnabled
     ? applyAnthropicPromptCache(tmp14, {
@@ -1504,9 +1640,9 @@ function streamAnthropic(
         }
         fn2();
         sseBuffer += arg03;
-        const tmp110 = sseBuffer.split('\n\n');
-        sseBuffer = tmp110.pop();
-        for (const tmp02 of tmp110) {
+        const tmp110 = splitSseFrames(sseBuffer);
+        sseBuffer = tmp110.remainder;
+        for (const tmp02 of tmp110.frames) {
           if (tmp02.trim()) {
             processPart(tmp02);
           }
@@ -1686,11 +1822,19 @@ function streamOpenAI(
   }
 ) {
   const tmp14 = getProviderConfig(tmp13).openai;
-  const tmp16 = shouldForwardOpenAITools(tmp9, tmp4);
+  // 根据 hostname 自动修正 OpenAI 路径（不支持 /v1/responses 的提供商直接使用 /v1/chat/completions）
+  const correctedOpenaiPath = correctApiPathForProvider('openai', tmp14.host, tmp14.apiPath);
+  if (correctedOpenaiPath !== tmp14.apiPath) {
+    console.log('  🔄 Auto-corrected OpenAI API path: ' + tmp14.apiPath + ' → ' + correctedOpenaiPath);
+    tmp14.apiPath = correctedOpenaiPath;
+  }
+  // 依据 allow/deny 环境变量过滤转发给上游的工具
+  const forwardedTools = filterForwardedTools(tmp4);
+  const tmp16 = shouldForwardOpenAITools(tmp9, forwardedTools);
   const tmp30 = {
     systemPrompt: tmp2,
     messages: tmp3,
-    tools: tmp4,
+    tools: forwardedTools,
     toolChoice: tmp5,
     resolvedModel: tmp6,
     serviceTier: tmp7,
@@ -1720,19 +1864,19 @@ function streamOpenAI(
           ? tmp31.reasoning.effort || 'default'
           : tmp32.reasoning_effort || 'off')
   );
-  if (tmp16 && tmp4 && tmp4.length > 0) {
+  if (tmp16 && forwardedTools && forwardedTools.length > 0) {
     console.log(
       '  🔧 OpenAI tools enabled: ' +
-        tmp4.length +
+        forwardedTools.length +
+        describeToolFilter(tmp4, forwardedTools) +
         ' (initiator=' +
         (tmp9 || 'unknown') +
-        ')\n    → [' +
-        tmp4.map((arg02) => arg02.name).join(', ') +
-        ']'
+        ') ' +
+        formatToolNameList(forwardedTools)
     );
   } else if (tmp4 && tmp4.length > 0) {
     console.log(
-      '  🔧 OpenAI tools disabled for user-initiated turn: ' + tmp4.length + ' available'
+      '  🔧 OpenAI tools disabled: ' + tmp4.length + describeToolFilter(tmp4, forwardedTools) + ' available'
     );
   }
   const tmp33 = [];
@@ -1863,7 +2007,7 @@ function streamOpenAI(
       return;
     }
     tmp25 = true;
-    logNoToolsCalled('OpenAI', arg02, tmp16 ? tmp4 : []);
+    logNoToolsCalled('OpenAI', arg02, tmp16 ? forwardedTools : []);
   };
   const tmp27 = tmp14.useHttp ? http : https;
   const tmp28 = tmp38;
@@ -1900,8 +2044,8 @@ function streamOpenAI(
       tmp02.mode === 'chat'
         ? new ChatCompletionsStreamProcessor(tmp8, tmp6, tmp11)
         : new OpenAIStreamProcessor(tmp8, tmp6, tmp11);
-    if (tmp16 && tmp4) {
-      processor.setAllowedTools(tmp4.map((arg02) => arg02.name));
+    if (tmp16 && forwardedTools) {
+      processor.setAllowedTools(forwardedTools.map((arg02) => arg02.name));
     }
     const tmp03 = JSON.stringify(tmp02.body);
     const attemptUsageMeta = tmp02.usageMeta || buildOpenAIUsageMeta(tmp02.mode, tmp02.path);
@@ -1937,7 +2081,7 @@ function streamOpenAI(
         'bytes=' +
           Buffer.byteLength(tmp03) +
           ' tools=' +
-          (tmp16 && tmp4 ? tmp4.length : 0) +
+          (tmp16 && forwardedTools ? forwardedTools.length : 0) +
           ' cache=' +
           attemptUsageMeta.cacheStatus +
           ' mode=' +

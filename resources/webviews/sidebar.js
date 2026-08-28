@@ -186,6 +186,7 @@
   const tmp20 = {
     claude: [["", "关闭 · 不启用思考"], ["low", "低 · budget 5k / adaptive"], ["medium", "中 · 推荐平衡"], ["high", "高 · 复杂分析/代码"], ["xhigh", "极高 · Opus 4.7/4.8"], ["max", "Max · Claude 最深思考"]],
     gpt: [["", "关闭 · 不启用 reasoning"], ["low", "低 · reasoning.effort=low"], ["medium", "中 · reasoning.effort=medium"], ["high", "高 · reasoning.effort=high"], ["xhigh", "极高 · reasoning.effort=xhigh"]],
+    gpt56: [["", "关闭 · 不启用 reasoning"], ["low", "低 · reasoning.effort=low"], ["medium", "中 · reasoning.effort=medium"], ["high", "高 · reasoning.effort=high"], ["xhigh", "极高 · reasoning.effort=xhigh"], ["max", "Max · GPT-5.6 最深推理"]],
     gemini: [["", "默认 · medium（API 默认，不覆盖）"], ["minimal", "Minimal · 最低思考 / 最低延迟"], ["low", "Low · 速度优先"], ["medium", "Medium · 推荐平衡"], ["high", "High · 最深推理"]]
   };
   function fn16(arg0) {
@@ -213,7 +214,7 @@
     }
     return false;
   }
-  function fn18(arg0, arg1) {
+  function fn18(arg0, arg1, arg2 = "") {
     const tmp22 = String(arg1 ?? "").trim().toLowerCase();
     if (arg0 === "gemini") {
       const tmp02 = {
@@ -225,9 +226,10 @@
       return tmp23.some(([tmp03]) => tmp03 === tmp12) ? tmp12 : "";
     }
     if (arg0 === "gpt") {
-      const tmp02 = tmp22 === "max" ? "xhigh" : tmp22;
-      const tmp12 = tmp20.gpt;
-      return tmp12.some(([tmp03]) => tmp03 === tmp02) ? tmp02 : "";
+      const tmp03 = /^gpt-5\.6(?:-|$)/.test(fn14(arg2));
+      const tmp02 = tmp22 === "max" && !tmp03 ? "xhigh" : tmp22;
+      const tmp12 = tmp03 ? tmp20.gpt56 : tmp20.gpt;
+      return tmp12.some(([tmp04]) => tmp04 === tmp02) ? tmp02 : "";
     }
     const tmp32 = tmp20[arg0] || tmp20.claude;
     return tmp32.some(([tmp02]) => tmp02 === tmp22) ? tmp22 : "";
@@ -261,16 +263,22 @@
     if (tmp6) {
       tmp6.textContent = fn16(tmp7);
     }
-    // GPT Fast Mode 行：只在 provider=gpt 时显示
+    // GPT Processing Tier 行：只在 provider=gpt 时显示
     const tmpST = fn4("cfgByok" + tmp32 + "ServiceTierRow");
     if (tmpST) {
       tmpST.classList.toggle("hidden", tmp7 !== "gpt");
     }
+    // GPT-5.6 推理模式行：只在 provider=gpt 且模型为 gpt-5.6 系列时显示
+    const isGpt56 = tmp7 === "gpt" && /^gpt-5\.6(?:-|$)/.test(fn14(arg1));
+    const tmpRM = fn4("cfgByok" + tmp32 + "ReasoningModeRow");
+    if (tmpRM) {
+      tmpRM.classList.toggle("hidden", !isGpt56);
+    }
     if (!tmp5 || !visible) {
       return;
     }
-    const tmp8 = fn18(tmp7, arg2 !== undefined ? arg2 : tmp5.value);
-    const tmp9 = tmp20[tmp7] || tmp20.claude;
+    const tmp8 = fn18(tmp7, arg2 !== undefined ? arg2 : tmp5.value, arg1);
+    const tmp9 = isGpt56 ? tmp20.gpt56 : tmp20[tmp7] || tmp20.claude;
     tmp5.innerHTML = tmp9.map(([tmp02, tmp12]) => "<option value=\"" + tmp02 + "\"" + (tmp8 === tmp02 ? " selected" : "") + ">" + tmp12 + "</option>").join("");
     tmp5.value = tmp8;
   }
@@ -311,6 +319,7 @@
     fn13("cfgByok" + tmp22 + "Protocol", String(arg0[tmp32 + "PROTOCOL"] || "").toLowerCase());
     fn13("cfgByok" + tmp22 + "ThinkingEffort", arg0[tmp32 + "THINKING_EFFORT"] || (tmp22 === 1 ? arg0.OPENAI_REASONING_EFFORT || "" : ""));
     fn13("cfgByok" + tmp22 + "ServiceTier", arg0[tmp32 + "OPENAI_SERVICE_TIER"] || (tmp22 === 1 ? arg0.OPENAI_SERVICE_TIER || "" : ""));
+    fn13("cfgByok" + tmp22 + "ReasoningMode", arg0[tmp32 + "OPENAI_REASONING_MODE"] || (tmp22 === 1 ? arg0.OPENAI_REASONING_MODE || "" : ""));
     fn19(arg1, tmp6, arg0[tmp32 + "THINKING_EFFORT"] || (tmp22 === 1 ? arg0.OPENAI_REASONING_EFFORT || "" : ""));
     const tmp7 = fn11(tmp22);
     const tmp8 = fn();
@@ -338,7 +347,9 @@
       fn23(arg0, 4);
       fn13("cfgAnthropicPath", arg0.BYOK1_ANTHROPIC_API_PATH || arg0.ANTHROPIC_API_PATH || "");
       fn13("cfgOpenaiPath", arg0.BYOK1_OPENAI_API_PATH || arg0.OPENAI_API_PATH || "");
-      fn13("cfgMaxTokens", arg0.MAX_TOKENS || "64000");
+      applyMaxTokensValue(arg0.MAX_TOKENS);
+      applyContextWindowValue(arg0.CONTEXT_WINDOW);
+      fn13("cfgModelListMode", ["inject", "replace", "off"].includes(String(arg0.MODEL_LIST_MODE || "").toLowerCase()) ? String(arg0.MODEL_LIST_MODE).toLowerCase() : "replace");
       fn13("cfgSysPromptOverride", arg0.SYSTEM_PROMPT_OVERRIDE === "true" ? "true" : "");
       fn13("cfgSysPromptPath", arg0.SYSTEM_PROMPT_PATH || "");
       fn3();
@@ -348,7 +359,163 @@
       fn13("cfgInferencePort", arg1.inferencePort || "3001");
       fn8(fn4("proxyRunBadge"), !!arg1.running, arg1.running ? "运行中" : "已停止");
     }
+    fn24c();
     fn20();
+  }
+  // 与 src/services/maxTokens.js 保持一致（webview 无法 require 扩展侧模块）
+  const MAX_TOKENS_PRESET_VALUES = [4096, 8192, 16384, 32768, 65536, 131072];
+  const MAX_TOKENS_WARN_THRESHOLD = 65536;
+  function formatTokensShort(value) {
+    const n = Number.parseInt(String(value == null ? "" : value).trim(), 10);
+    if (!Number.isInteger(n) || n <= 0) {
+      return "";
+    }
+    const pick = (base, unit, decBase) => {
+      const b = n / base;
+      if (Number.isInteger(b)) {
+        return String(b) + unit;
+      }
+      const d = n / decBase;
+      if (Number.isInteger(d)) {
+        return String(d) + unit;
+      }
+      return b.toFixed(1).replace(/\.0$/, "") + unit;
+    };
+    if (n >= 1000000) {
+      return pick(1048576, "M", 1000000);
+    }
+    if (n >= 1000) {
+      return pick(1024, "K", 1000);
+    }
+    return String(n);
+  }
+  // 读取当前生效的 max_tokens：选了「自定义」取输入框，否则取下拉值
+  function readMaxTokens() {
+    const preset = fn4("cfgMaxTokensPreset");
+    const custom = fn4("cfgMaxTokens");
+    if (preset && preset.value && preset.value !== "custom") {
+      return preset.value;
+    }
+    return (custom && custom.value) || "32768";
+  }
+  // 预设/自定义联动：选「自定义」才显示输入框；同步提示与超限告警
+  function syncMaxTokensUI() {
+    const preset = fn4("cfgMaxTokensPreset");
+    const custom = fn4("cfgMaxTokens");
+    const hint = fn4("cfgMaxTokensHint");
+    if (!preset || !custom) {
+      return;
+    }
+    const isCustom = preset.value === "custom";
+    custom.classList.toggle("hidden", !isCustom);
+    const effective = Number.parseInt(readMaxTokens(), 10) || 0;
+    if (hint) {
+      const pretty = formatTokensShort(effective);
+      if (effective > MAX_TOKENS_WARN_THRESHOLD) {
+        hint.textContent = "当前值 " + pretty + " 偏高，超出模型经网关的输出上限会导致生成被截断";
+        hint.classList.add("warn");
+      } else {
+        hint.textContent = pretty ? "当前 " + pretty : "";
+        hint.classList.remove("warn");
+      }
+    }
+  }
+  // 回填：命中预设则选中该档，否则切到「自定义」并填入实际值
+  function applyMaxTokensValue(value) {
+    const n = Number.parseInt(String(value == null ? "" : value).trim(), 10);
+    const effective = Number.isInteger(n) && n > 0 ? n : 32768;
+    const preset = fn4("cfgMaxTokensPreset");
+    const custom = fn4("cfgMaxTokens");
+    if (custom && document.activeElement !== custom) {
+      custom.value = String(effective);
+    }
+    if (preset && document.activeElement !== preset) {
+      preset.value = MAX_TOKENS_PRESET_VALUES.indexOf(effective) >= 0 ? String(effective) : "custom";
+    }
+    syncMaxTokensUI();
+  }
+  // 上下文窗口：与 src/services/maxTokens.js 的 CONTEXT_WINDOW_PRESETS 保持一致
+  const CONTEXT_WINDOW_PRESET_VALUES = [128000, 200000, 256000, 512000, 1000000];
+  // 上下文窗口按十进制口径显示（厂商宣传的 200K 指 200000，用 1024 制会显示 195K）
+  function formatContextShort(value) {
+    const n = Number.parseInt(String(value == null ? "" : value).trim(), 10);
+    if (!Number.isInteger(n) || n <= 0) {
+      return "";
+    }
+    const trim = (x) => String(Number(x.toFixed(1))).replace(/\.0$/, "");
+    if (n >= 1000000) {
+      return trim(n / 1000000) + "M";
+    }
+    if (n >= 1000) {
+      return trim(n / 1000) + "K";
+    }
+    return String(n);
+  }
+  function readContextWindow() {
+    const preset = fn4("cfgContextWindowPreset");
+    const custom = fn4("cfgContextWindow");
+    if (preset && preset.value && preset.value !== "custom") {
+      return preset.value;
+    }
+    return (custom && custom.value) || "200000";
+  }
+  function syncContextWindowUI() {
+    const preset = fn4("cfgContextWindowPreset");
+    const custom = fn4("cfgContextWindow");
+    const hint = fn4("cfgContextWindowHint");
+    if (!preset || !custom) {
+      return;
+    }
+    custom.classList.toggle("hidden", preset.value !== "custom");
+    if (hint) {
+      const pretty = formatContextShort(readContextWindow());
+      hint.textContent = pretty ? "Devin 将显示 " + pretty + " 上下文" : "";
+    }
+  }
+  function applyContextWindowValue(value) {
+    const n = Number.parseInt(String(value == null ? "" : value).trim(), 10);
+    const effective = Number.isInteger(n) && n > 0 ? n : 200000;
+    const preset = fn4("cfgContextWindowPreset");
+    const custom = fn4("cfgContextWindow");
+    if (custom && document.activeElement !== custom) {
+      custom.value = String(effective);
+    }
+    if (preset && document.activeElement !== preset) {
+      preset.value =
+        CONTEXT_WINDOW_PRESET_VALUES.indexOf(effective) >= 0 ? String(effective) : "custom";
+    }
+    syncContextWindowUI();
+  }
+  // 端口折叠区收起时，在标题右侧显示当前端口摘要，避免展开才能看到
+  function fn24c() {
+    const tmp12 = fn4("proxyPortsSummary");
+    if (!tmp12) {
+      return;
+    }
+    const tmp22 = (fn4("cfgHybridPort") || {}).value || "3006";
+    const tmp32 = (fn4("cfgInferencePort") || {}).value || "3001";
+    const tmp42 = tmp22 + " / " + tmp32;
+    if (tmp12.textContent !== tmp42) {
+      tmp12.textContent = tmp42;
+    }
+  }
+  // 「默认 Cascade」开关：以 Devin 实际配置为准回填，避免"显示开着但没生效"
+  function fn24b(arg0) {
+    if (!arg0) {
+      return;
+    }
+    const tmp12 = fn4("cfgPreferCascadeAgent");
+    if (tmp12 && document.activeElement !== tmp12) {
+      tmp12.checked = arg0.checked === true;
+    }
+    const tmp22 = fn4("preferCascadeHintText");
+    if (tmp22) {
+      tmp22.textContent = arg0.foreign
+        ? "已手动指定为 " + arg0.foreign
+        : arg0.stale
+          ? "未生效，点击重试"
+          : "避免新会话落到 Devin Local";
+    }
   }
   function fn24a() {
     const tmp12 = fn4("cfgAnthropicPath");
@@ -440,7 +607,13 @@
       if (isEditing && !isActive) cls.push("editing");
       const model = p.byok1Model || "未选择模型";
       const host = p.byok1Display || "";
-      const desc = fn6(host) + " · " + fn6(model);
+      // 两个值语义不同，分别标注：↑ 为单次输出上限，⊞ 为 Devin 显示的上下文额度
+      const tok = formatTokensShort(p.maxTokens);
+      const ctx = formatContextShort(p.contextWindow);
+      const badges =
+        (tok ? ' <span class="profile-desc-tok" title="单次输出上限（max_tokens，发往上游 API）">↑' + fn6(tok) + "</span>" : "") +
+        (ctx ? ' <span class="profile-desc-tok" title="上下文窗口（仅影响 Devin 界面显示的额度）">⊞' + fn6(ctx) + "</span>" : "");
+      const desc = fn6(host) + " · " + fn6(model) + badges;
       const configured = p.byok1Configured && p.byok2Configured;
       const statusBadge = isActive
         ? '<span class="badge badge-info">使用中</span>'
@@ -473,13 +646,15 @@
   // 当前编辑中的 profile 状态
   let currentEditingProfile = null;
 
-  function showProfileEditor(profileId, profileName, isActive, config) {
+  function showProfileEditor(profileId, profileName, isActive, config, balanceToken, userId) {
     currentEditingProfile = { profileId, profileName, isActive };
     const card = fn4("profileEditorCard");
     const nameInput = fn4("cfgProfileName");
     const badge = fn4("profileEditorBadge");
     if (card) card.classList.remove("hidden");
     if (nameInput) nameInput.value = profileName || "";
+    fn13("cfgBalanceToken", balanceToken || "");
+    fn13("cfgUserId", userId || "");
     if (badge) {
       badge.textContent = isActive ? "使用中" : "未启用";
       badge.className = isActive ? "badge badge-info" : "badge badge-warn";
@@ -492,7 +667,8 @@
       fn23(config, 4);
       fn13("cfgAnthropicPath", config.BYOK1_ANTHROPIC_API_PATH || config.ANTHROPIC_API_PATH || "");
       fn13("cfgOpenaiPath", config.BYOK1_OPENAI_API_PATH || config.OPENAI_API_PATH || "");
-      fn13("cfgMaxTokens", config.MAX_TOKENS || "64000");
+      applyMaxTokensValue(config.MAX_TOKENS);
+      applyContextWindowValue(config.CONTEXT_WINDOW);
       fn13("cfgCompletionTimeoutMs", config.COMPLETION_TIMEOUT_MS || "12000");
       fn13("cfgHybridPort", config.HYBRID_PORT || "3006");
       fn13("cfgInferencePort", config.INFERENCE_PORT || "3001");
@@ -570,6 +746,7 @@
       [tmp6 + "OPENAI_API_KEY"]: tmp22,
       [tmp6 + "OPENAI_API_PATH"]: (fn4("cfgOpenaiPath") || {}).value || "",
       [tmp6 + "OPENAI_SERVICE_TIER"]: ((fn4("cfgByok" + tmp12 + "ServiceTier") || {}).value || "").trim(),
+      [tmp6 + "OPENAI_REASONING_MODE"]: ((fn4("cfgByok" + tmp12 + "ReasoningMode") || {}).value || "").trim(),
       [tmp6 + "MODEL"]: tmp5,
       [tmp6 + "THINKING_EFFORT"]: ((fn4("cfgByok" + tmp12 + "ThinkingEffort") || {}).value || "").trim(),
       [tmp6 + "PROTOCOL"]: fn19a(tmp12)
@@ -592,9 +769,12 @@
       OPENAI_API_KEY: tmp02.BYOK1_OPENAI_API_KEY,
       OPENAI_API_PATH: tmp02.BYOK1_OPENAI_API_PATH,
       OPENAI_SERVICE_TIER: tmp02.BYOK1_OPENAI_SERVICE_TIER || "",
+      OPENAI_REASONING_MODE: tmp02.BYOK1_OPENAI_REASONING_MODE || "",
       DEFAULT_MODEL: tmp02.BYOK1_MODEL,
-      MAX_TOKENS: (fn4("cfgMaxTokens") || {}).value || "64000",
+      MAX_TOKENS: readMaxTokens(),
+      CONTEXT_WINDOW: readContextWindow(),
       COMPLETION_TIMEOUT_MS: (fn4("cfgCompletionTimeoutMs") || {}).value || "12000",
+      MODEL_LIST_MODE: (fn4("cfgModelListMode") || {}).value || "replace",
       HYBRID_PORT: (fn4("cfgHybridPort") || {}).value || "3006",
       INFERENCE_PORT: (fn4("cfgInferencePort") || {}).value || "3001",
       SYSTEM_PROMPT_OVERRIDE: (fn4("cfgSysPromptOverride") || {}).value || "",
@@ -782,7 +962,11 @@
       tmp32.textContent = String(arg0.requestCount || 0);
     }
     if (tmp4) {
-      const tmp02 = (arg0.running ? "<button type=\"button\" class=\"btn btn-d\" data-ws-action=\"stopProxy\">停止代理</button>" : "<button type=\"button\" class=\"btn btn-p\" data-ws-action=\"startProxy\" data-ws-mode=\"both\">一键启动</button>") + "<button type=\"button\" class=\"btn btn-s sm\" data-ws-action=\"saveConfig\">仅保存配置</button><button type=\"button\" class=\"btn btn-s sm\" data-ws-action=\"maintenanceTools\">维护工具</button>";
+      // 只渲染主操作按钮：次级操作（维护工具 / 新窗口）在模板里是静态的，
+      // 若在此一并注入会与模板重复出现两份
+      const tmp02 = arg0.running
+        ? "<button type=\"button\" class=\"btn btn-d btn-block\" data-ws-action=\"stopProxy\">停止代理</button>"
+        : "<button type=\"button\" class=\"btn btn-p btn-block\" data-ws-action=\"startProxy\" data-ws-mode=\"both\">一键启动</button>";
       if (tmp4.innerHTML !== tmp02) {
         tmp4.innerHTML = tmp02;
       }
@@ -907,6 +1091,8 @@
       fn5("saveConfig", {
         config: fn27(),
         profileName: nameInput ? nameInput.value.trim() : "",
+        balanceToken: (fn4("cfgBalanceToken")?.value || "").trim(),
+        userId: (fn4("cfgUserId")?.value || "").trim(),
         silent: false
       });
     } else if (tmp32 === "closeProfileEditor") {
@@ -1024,6 +1210,26 @@
       tmp1 = "";
       fn7("patch", "busy", "正在切回自动检测...");
       fn5("clearExtJsPath");
+    } else if (tmp32 === "checkVersionUpdate") {
+      renderPluginVersionInfo({ ...(lastVersionInfo || {}), checking: true });
+      fn5("checkVersionUpdate");
+    } else if (tmp32 === "openRepoUrl") {
+      const repoUrl =
+        (lastVersionInfo && lastVersionInfo.repoUrl) ||
+        (fn4("pluginRepoLink") && fn4("pluginRepoLink").textContent.trim());
+      if (repoUrl) {
+        fn5("openExternalUrl", { url: repoUrl });
+      }
+    } else if (tmp32 === "openReleaseUrl") {
+      // 有新版本就跳该 Release，否则跳 releases 列表页
+      fn5("openReleaseUrl", {
+        url:
+          (lastVersionInfo &&
+            (lastVersionInfo.isNewer
+              ? lastVersionInfo.releaseUrl
+              : lastVersionInfo.releasesUrl)) ||
+          undefined
+      });
     } else if (tmp32 === "reloadIdeWindow") {
       fn5("reloadIdeWindow");
     } else if (tmp32 === "newWindow") {
@@ -1073,7 +1279,34 @@
       fn5("setAutoStartProxy", {
         value: tmp12.checked === true
       });
-    } else if (tmp12.id === "cfgByok1Model" || tmp12.id === "cfgByok2Model" || tmp12.id === "cfgByok3Model" || tmp12.id === "cfgByok4Model" || tmp12.id === "cfgByok1ThinkingEffort" || tmp12.id === "cfgByok2ThinkingEffort" || tmp12.id === "cfgByok3ThinkingEffort" || tmp12.id === "cfgByok4ThinkingEffort" || tmp12.id === "cfgByok1Protocol" || tmp12.id === "cfgByok2Protocol" || tmp12.id === "cfgByok3Protocol" || tmp12.id === "cfgByok4Protocol" || tmp12.id === "cfgByok1ServiceTier" || tmp12.id === "cfgByok2ServiceTier" || tmp12.id === "cfgByok3ServiceTier" || tmp12.id === "cfgByok4ServiceTier") {
+    } else if (tmp12.id === "cfgPreferCascadeAgent") {
+      // 写的是 Devin 自身的 acp.preferredAgent（非本插件 .env），故走独立消息
+      fn5("setPreferCascadeAgent", {
+        value: tmp12.checked === true
+      });
+    } else if (tmp12.id === "cfgMaxTokensPreset") {
+      // 从预设切到自定义时，把当前生效值填进输入框作为起点，避免出现空框
+      const custom = fn4("cfgMaxTokens");
+      if (tmp12.value === "custom" && custom && !custom.value) {
+        custom.value = "32768";
+      } else if (tmp12.value !== "custom" && custom) {
+        custom.value = tmp12.value;
+      }
+      syncMaxTokensUI();
+    } else if (tmp12.id === "cfgContextWindowPreset") {
+      const custom = fn4("cfgContextWindow");
+      if (tmp12.value === "custom" && custom && !custom.value) {
+        custom.value = "200000";
+      } else if (tmp12.value !== "custom" && custom) {
+        custom.value = tmp12.value;
+      }
+      syncContextWindowUI();
+    } else if (tmp12.id === "cfgModelListMode") {
+      // 该控件在「控制状态」Tab，不属于方案编辑器，走独立的立即落盘 + 热更新
+      fn5("setModelListMode", {
+        value: tmp12.value || "replace"
+      });
+    } else if (tmp12.id === "cfgByok1Model" || tmp12.id === "cfgByok2Model" || tmp12.id === "cfgByok3Model" || tmp12.id === "cfgByok4Model" || tmp12.id === "cfgByok1ThinkingEffort" || tmp12.id === "cfgByok2ThinkingEffort" || tmp12.id === "cfgByok3ThinkingEffort" || tmp12.id === "cfgByok4ThinkingEffort" || tmp12.id === "cfgByok1Protocol" || tmp12.id === "cfgByok2Protocol" || tmp12.id === "cfgByok3Protocol" || tmp12.id === "cfgByok4Protocol" || tmp12.id === "cfgByok1ServiceTier" || tmp12.id === "cfgByok2ServiceTier" || tmp12.id === "cfgByok3ServiceTier" || tmp12.id === "cfgByok4ServiceTier" || tmp12.id === "cfgByok1ReasoningMode" || tmp12.id === "cfgByok2ReasoningMode" || tmp12.id === "cfgByok3ReasoningMode" || tmp12.id === "cfgByok4ReasoningMode") {
       const tmp02 = /cfgByok2/.test(tmp12.id) ? 2 : /cfgByok3/.test(tmp12.id) ? 3 : /cfgByok4/.test(tmp12.id) ? 4 : 1;
       if (tmp12.id.endsWith("Model")) {
         tmp3["lastSelectedModel" + tmp02] = tmp12.value || "";
@@ -1096,17 +1329,27 @@
     if (tmp12 && (tmp12.id === "cfgDefaultModelCustom" || /cfgByok[1234]Model/.test(tmp12.id))) {
       fn20();
     }
+    if (tmp12 && (tmp12.id === "cfgHybridPort" || tmp12.id === "cfgInferencePort")) {
+      fn24c();
+    }
+    if (tmp12 && tmp12.id === "cfgMaxTokens") {
+      syncMaxTokensUI();
+    }
+    if (tmp12 && tmp12.id === "cfgContextWindow") {
+      syncContextWindowUI();
+    }
   });
   window.addEventListener("message", arg0 => {
     const tmp12 = arg0.data || {};
     if (tmp12.type === "status") {
       fn35(tmp12.proxy);
       fn24(tmp12.config, tmp12.proxy);
+      fn24b(tmp12.preferCascade);
       fn12(tmp12.patch);
     } else if (tmp12.type === "profileList") {
       renderProfileList(tmp12);
     } else if (tmp12.type === "openProfileEditor") {
-      showProfileEditor(tmp12.profileId, tmp12.profileName, tmp12.isActive, tmp12.config);
+      showProfileEditor(tmp12.profileId, tmp12.profileName, tmp12.isActive, tmp12.config, tmp12.balanceToken, tmp12.userId);
     } else if (tmp12.type === "actionState" && tmp12.section) {
       fn7(tmp12.section, tmp12.state === "error" ? "error" : "success", tmp12.message || "完成");
     } else if (tmp12.type === "modelList") {
@@ -1172,12 +1415,14 @@
       tmp02.innerHTML += "<div class=\"log-line" + tmp13 + "\">" + fn6(tmp12.line) + "</div>";
       tmp02.scrollTop = tmp02.scrollHeight;
     } else if (tmp12.type === "versionUpdate" || (tmp12.type === "status" && tmp12.versionUpdate)) {
-      const updateInfo = tmp12.versionUpdate || tmp12.versionUpdate;
+      const updateInfo = tmp12.versionUpdate;
       if (updateInfo && updateInfo.hasUpdate) {
         showVersionUpdateBanner(updateInfo);
       } else {
         hideVersionUpdateBanner();
       }
+      // 顶部横幅可被「忽略」，但插件信息卡片始终反映真实版本状态
+      renderPluginVersionInfo(updateInfo);
     }
   });
 
@@ -1198,6 +1443,63 @@
     }
   }
 
+  // 最近一次已知的版本信息，供「下载最新版 / 前往仓库」按钮取 URL
+  let lastVersionInfo = null;
+
+  function renderPluginVersionInfo(info) {
+    if (info) {
+      lastVersionInfo = info;
+    }
+    const tag = fn4("pluginUpdateTag");
+    const badge = fn4("pluginVersionBadge");
+    const hint = fn4("pluginUpdateHint");
+    const btn = fn4("btnCheckUpdate");
+    const repoLink = fn4("pluginRepoLink");
+
+    if (repoLink && info && info.repoUrl) {
+      repoLink.textContent = info.repoUrl;
+    }
+
+    if (btn) {
+      const busy = !!(info && info.checking);
+      btn.disabled = busy;
+      btn.textContent = busy ? "检查中..." : "检查更新";
+    }
+
+    if (!info) return;
+
+    // 版本号后面的「可更新」提示：只要远端更新就显示，与横幅的「忽略」状态无关
+    if (tag) {
+      if (info.isNewer && info.latestVersion) {
+        tag.textContent = "可更新 v" + info.latestVersion;
+        tag.classList.remove("hidden");
+      } else {
+        tag.classList.add("hidden");
+      }
+    }
+
+    if (badge) {
+      badge.classList.toggle("badge-warn", !!info.isNewer);
+      badge.classList.toggle("badge-ok", !info.isNewer);
+    }
+
+    if (hint) {
+      if (info.error) {
+        hint.textContent = "检查更新失败：" + info.error;
+        hint.classList.remove("hidden");
+      } else if (info.isNewer) {
+        hint.textContent =
+          "已发布 v" + info.latestVersion + "，点击「下载最新版」前往 GitHub 下载 .vsix 安装包";
+        hint.classList.remove("hidden");
+      } else if (info.latestVersion) {
+        hint.textContent = "已是最新版本";
+        hint.classList.remove("hidden");
+      } else {
+        hint.classList.add("hidden");
+      }
+    }
+  }
+  
   const btnOpenRelease = fn4("btnOpenRelease");
   if (btnOpenRelease) {
     btnOpenRelease.addEventListener("click", () => {
@@ -1234,12 +1536,12 @@
   // 配置字段白名单（需要自动保存的字段）
   const AUTO_SAVE_FIELDS = new Set([
     'cfgProfileName',
-    'cfgByok1Host', 'cfgByok1Key', 'cfgByok1Model', 'cfgByok1ThinkingEffort', 'cfgByok1Protocol', 'cfgByok1ServiceTier',
-    'cfgByok2Host', 'cfgByok2Key', 'cfgByok2Model', 'cfgByok2ThinkingEffort', 'cfgByok2Protocol', 'cfgByok2ServiceTier',
-    'cfgByok3Host', 'cfgByok3Key', 'cfgByok3Model', 'cfgByok3ThinkingEffort', 'cfgByok3Protocol', 'cfgByok3ServiceTier',
-    'cfgByok4Host', 'cfgByok4Key', 'cfgByok4Model', 'cfgByok4ThinkingEffort', 'cfgByok4Protocol', 'cfgByok4ServiceTier',
+    'cfgByok1Host', 'cfgByok1Key', 'cfgByok1Model', 'cfgByok1ThinkingEffort', 'cfgByok1Protocol', 'cfgByok1ServiceTier', 'cfgByok1ReasoningMode',
+    'cfgByok2Host', 'cfgByok2Key', 'cfgByok2Model', 'cfgByok2ThinkingEffort', 'cfgByok2Protocol', 'cfgByok2ServiceTier', 'cfgByok2ReasoningMode',
+    'cfgByok3Host', 'cfgByok3Key', 'cfgByok3Model', 'cfgByok3ThinkingEffort', 'cfgByok3Protocol', 'cfgByok3ServiceTier', 'cfgByok3ReasoningMode',
+    'cfgByok4Host', 'cfgByok4Key', 'cfgByok4Model', 'cfgByok4ThinkingEffort', 'cfgByok4Protocol', 'cfgByok4ServiceTier', 'cfgByok4ReasoningMode',
     'cfgHybridPort', 'cfgInferencePort', 'cfgAnthropicPath', 'cfgOpenaiPath',
-    'cfgMaxTokens', 'cfgCompletionTimeoutMs'
+    'cfgMaxTokens', 'cfgMaxTokensPreset', 'cfgContextWindow', 'cfgContextWindowPreset', 'cfgCompletionTimeoutMs'
   ]);
 
   let autoSaveTimer = null;
@@ -1364,6 +1666,17 @@
   updateTabBadges();
 
   // 快捷键支持：Cmd/Ctrl + 1/2/3 切换标签页
+  // role="button" 的链接/徽标需要键盘可达（Enter / Space 等同点击）
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const target = e.target && e.target.closest
+      ? e.target.closest('[data-ws-action][role="button"]')
+      : null;
+    if (!target) return;
+    e.preventDefault();
+    target.click();
+  });
+
   document.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.metaKey) {
       if (e.key === "1") {

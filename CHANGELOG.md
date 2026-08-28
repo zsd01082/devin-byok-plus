@@ -5,75 +5,128 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.6.0] - 2026-08-01
+
+### Added
+- **插件信息卡片可操作**：版本号后显示「可更新」徽标，新增「检查更新 / 前往仓库 / 下载最新版」三个按钮
+- 卡片里的仓库地址可点击打开
+
+### Fixed
+- 修复有新版本时不提示更新
+- 修复手动点「检查更新」没有反应
+- 检查更新失败时给出提示，不再当作「已是最新」
+
+### Changed
+- 使用教程同步到当前功能
+- 「GPT Fast Mode」标签改为「GPT Processing Tier」
+
+## [2.5.0] - 2026-07-31
+
+Devin 更新后，模型下拉框里不再出现 BYOK 条目、导致插件"失效"。本版在代理层
+接管模型列表，把你配置的槽位放回下拉框。
+
+### Added
+- **模型列表接管**：把配置好的 BYOK 槽位放回 Devin 的模型下拉框，并显示真实模型名（如 `Claude Opus 4.8`）。三种模式：只显示 BYOK 槽位（默认）/ 与官方模型共存 / 不接管
+- **默认使用 Cascade**：新建会话不再落到「Devin Local」——那个模式不经过本插件，模型框会显示 `None selected`
+- **上下文窗口设置**：控制 Devin 界面显示的上下文额度（`200K context`），可选 128K / 200K / 256K / 512K / 1M 或自定义
+- **最大 Token 改为下拉选择**：4K / 8K / 16K / 32K（推荐）/ 64K / 128K 六档预设，也可自定义
+- **下拉框显示输出上限**：模型名下方会标出「输出上限 32K」，选模型时不用再回插件里查
+- **方案列表显示两个 Token 值**：`↑32K` 是输出上限，`⊞200K` 是上下文窗口
+
+### Changed
+- 模型列表默认改为「只显示 BYOK 槽位」——非 Pro 账号下官方模型几乎都不可用，列表更清爽
+- **控制状态页重新排版**：启动按钮移到最上方并占满整行，端口收进折叠区，新增「模型接管」分区
+- README 从 529 行精简到 126 行，环境变量等参考内容拆分到 [docs/](docs/)
+
+### Fixed
+- **修复上下文显示错误**：此前把「最大 Token」误当作上下文窗口发给 Devin，导致填 800000 后对话框显示「800k 上下文」
+- **修复切换模型列表模式后不生效**：保存时该设置会被方案系统丢弃
+- 修复代理控制区「维护工具」按钮重复显示两个
+- 修复「最大 Token」默认值不一致（新建方案会拿到 64000，可能导致生成被截断）
+- 修正「切换后需重启代理」的错误提示——实际是即时生效
+- 修复文档内 6 处失效链接
+- 插件包不再包含 README 用的图片，体积减少约 123KB
+
+## [2.4.0] - 2026-07-26
+
+移植上游 v2.5.0 / v2.6.0 / v2.6.1 的能力，并适配到本 fork 的 4 个 BYOK 槽位。
+
+### Added
+- **GPT-5.6 推理模式**（移植上游 v2.6.1）：GPT-5.6 系列槽位新增「推理模式」下拉（standard / pro），并保留 `max` 思考强度
+- **转发工具过滤**（移植上游 v2.6.0）：可用白 / 黑名单控制哪些工具转发给上游，支持 `mcp1_*` 这样的前缀通配
+- **网关能力缓存落盘**（移植上游 v2.6.0）：记住某网关是否支持新接口，跨重启复用，避免每次启动重新探测
+- **插件信息卡片**（移植上游 v2.6.0）：系统页显示当前版本与仓库地址
+- **状态栏余额显示**（PR #2）：显示当前方案的 API 余额（NewAPI / One-API），每 2 分钟刷新；未配置访问令牌的用户不会发起任何查询
+- **新版本提示**：检测到 GitHub 有新版本时在侧栏顶部提示，可一键跳转或忽略
+
+### Changed
+- **DeepSeek / Kimi 路径自动修正**（PR #4）：这两家的网关用非标准路径，现按域名自动修正，不用手改配置
+- 修正缓冲响应的 HTTP 头，避免残留分块传输标记（移植上游 v2.5.0）
+- SSE 帧拆分兼容 CRLF 换行，避免部分网关的响应解析错误（移植上游 v2.6.0）
+- 日志脱敏加固：结构化字段与裸 token 都会被打码（移植上游 v2.6.0）
+- 方案列表去掉固定高度，不再留大片空白
+
+### Fixed
+- 修复 API 余额查询失败（鉴权格式与解析逻辑都有问题）
+- 修复诊断面板把 GPT 优先通道的 `priority` 误报为「未覆盖」
+- 修复余额查询失败时可能产生未捕获异常
+- 补齐推理模式的取值校验，避免手改配置文件写入非法值
+
 ## [2.3.0] - 2026-07-04
 
 ### Added
-- **OpenAI service_tier=fast 支持**（移植上游 v2.4.0）：各 BYOK 槽位支持独立配置 `OPENAI_SERVICE_TIER`（取值 `fast` 或空），启用 OpenAI 优先级通道（priority tier）。UI 层新增 "GPT Fast Mode" 下拉选项（仅在协议为 `openai/gpt` 时显示），配置通过 `.env` 持久化并支持热重载。模型名以 `-priority` 结尾时自动启用 fast 模式。三层回退机制：slot 级配置 → BYOK1 回退 → 全局 `OPENAI_SERVICE_TIER`。诊断报告集成 service tier 状态显示。
-- **手动协议选择**：BYOK 配置卡片新增 Protocol 下拉框（anthropic / openai / gemini），支持手动覆盖自动检测的 provider。协议变更时思考强度下拉和 GPT Fast Mode 行会联动显隐/重建选项，避免协议与参数不匹配。存储于 `BYOKn_PROTOCOL` 环境变量，空值时回退自动检测。扩展 `profileStore` 支持 protocol 字段持久化到 profiles.json。
-- **方案编辑器 UI 优化**：方案编辑器从嵌入式改为独立折叠卡片，默认隐藏以减少首屏信息密度。卡片标题栏显示当前激活方案名，支持点击展开/折叠。Tutorial 教程文案同步更新方案管理流程说明。
+- **GPT 优先通道**（移植上游 v2.4.0）：各槽位可单独开启 OpenAI 的 fast / priority 通道，模型名以 `-priority` 结尾时自动启用
+- **手动指定 API 协议**：槽位卡片新增协议下拉（anthropic / openai / gemini），覆盖按模型名的自动识别；切换后思考强度等选项会联动重建
+- **方案编辑器改为折叠卡片**：默认收起以降低首屏信息密度，标题栏显示当前激活的方案名
 
 ### Changed
-- BYOK 配置卡片 Thinking Effort 行在手动协议下**总是显示**（之前仅按模型名自动判断）；协议切换时立即根据新协议重建思考强度选项列表。
-- `sidebarTemplate.js` 新增 `buildProtocolOptions()` 和 `buildOpenAIServiceTierOptions()` helper，统一下拉选项生成逻辑。
-- `profileStore.js` 的 `sanitizeProtocol()` 和 `detectModelProtocol()` 增强协议白名单校验与自动识别（anthropic/openai/gemini）。
-- `diagnostics.js` 的 `resolveDiagnosticModelRoute` 扩展支持 4 个 BYOK 槽位的 service tier 读取（BYOK1=Opus, BYOK2=Opus Thinking, BYOK3=Sonnet, BYOK4=Sonnet Thinking）。
+- 手动指定协议时思考强度一栏总是显示（此前仅按模型名判断，手填模型名会导致选项不出现）
 
 ### Fixed
-- 修复协议手动切换后思考强度选项未联动更新的问题。
-- 修复 GPT Fast Mode 行在非 OpenAI 协议下仍显示的问题（现按 protocol 严格控制可见性）。
+- 修复切换协议后思考强度选项没有跟着更新
+- 修复 GPT 优先通道那一行在非 OpenAI 协议下仍然显示
 
 ## [2.2.0] - 2026-07-03
 
 ### Added
-- **4 槽位 BYOK 扩展**：从 2 槽位扩展到 4 槽位，新增 Claude Sonnet 4 BYOK（#3）与 Claude Sonnet 4 Thinking BYOK（#4），支持更灵活的多模型配置。UI 层新增 BYOK #3/#4 配置卡片（紫色/琥珀色条纹），表单自动保存与槽位状态徽章完整支持 4 槽位。
-- **多渠道 Profile 系统**：引入配置方案（Profile）管理能力，支持创建/切换/重命名/复制/删除多套独立配置，每个方案管理 4 个 BYOK 槽位 + 高级配置，存储于 `~/.devin-byok-plus/profiles.json`（0o600 权限保护）。向后兼容：现有 2 槽位用户无感迁移，旧 profiles.json 自动补齐 byok3/byok4 字段；BYOK #3/#4 为可选扩展槽位，不强制配置。
-- **Prompt Cache / Token 优化**（移植上游 v2.3.0）：Anthropic 请求自动对 system / tools / 消息稳定前缀打 `cache_control` 断点并携带 `anthropic-beta: prompt-caching-2024-07-31` 头；网关不支持时自动标记能力并立即无缓存重试（不计入重试次数/熔断）。OpenAI/Gemini 路径按 name 稳定排序 tools、稳定请求前缀以提升隐式前缀缓存命中。新增环境变量 `PROMPT_CACHE_ENABLED` / `ANTHROPIC_PROMPT_CACHE` / `OPENAI_PROMPT_CACHE` / `PROMPT_CACHE_SORT_TOOLS` / `PROMPT_CACHE_TAIL_MESSAGES`。
-- **Token 用量日志**（移植上游 v2.3.0）：各 provider 流结束时输出统一 `📊` 日志（input/output/cached/creation/命中率/模式/路由/cache 状态），用于观测缓存效果与 token 消耗。
-- **上游地址覆盖**：`PROXY_API_HOST`（hybrid-server）与 `PROXY_INFERENCE_HOST`（inference-proxy）支持自定义上游 API 地址。
+- **BYOK 槽位从 2 个扩展到 4 个**：新增 #3 / #4 两个可选槽位，可分别指向不同网关与模型
+- **多方案管理**：一套配置存为方案，支持创建 / 切换 / 重命名 / 复制 / 删除；老用户无感迁移
+- **Prompt Cache**（移植上游 v2.3.0）：自动为 Claude 请求打缓存断点降低费用，网关不支持时自动降级重试；GPT / Gemini 侧通过稳定请求前缀提升缓存命中
+- **Token 用量日志**（移植上游 v2.3.0）：每次对话结束输出 `📊` 日志，含输入 / 输出 / 缓存命中率
+- 支持自定义上游地址（`PROXY_API_HOST` / `PROXY_INFERENCE_HOST`）
 
 ### Changed
-- `EXPOSE_BACKEND_INFO` 默认值由 `true` 改为 `false`：system prompt 末尾追加的动态 backend 信息会破坏前缀缓存；如需恢复请显式设置 `EXPOSE_BACKEND_INFO=true`。
-- ws-bridge 运行时注入的消息现作为「易变尾部」处理，prompt cache 断点自动前移，内部标记发送上游前剥除。
-- `release.js` 脚本移除自动写入 CHANGELOG 功能，改为用户手动维护，避免重复追加条目。
+- `EXPOSE_BACKEND_INFO` 默认关闭：该功能会在提示词末尾追加动态信息，破坏缓存命中
+- 发布脚本不再自动写 CHANGELOG，改为手动维护，避免重复追加
 
 ### Fixed
-- 修复 `config-hotreload.test.mjs` 中 oversized POST body 测试的请求体大小（20000→64001 字节，真正超过 64000 上限以正确触发 413 检查）。
-- 修复代理层 `models.js` 的 `/api/models` 端点 slot 参数解析（原仅接受 1/2，导致 BYOK #3/#4 "加载模型"按钮失效）。
-- 修复 `chat.js` 和 `diagnostics.js` 的 `MODEL_MAP` 缺失 Sonnet 4 BYOK 两个模型键，导致 Sonnet 4 请求无法路由。
-- 修复 `sidebarProvider.js` 的 `importExternalConfig` / `fetchModels` 处理器 slot 范围校验（原仅支持 1/2，扩展到 1-4）。
-- 修复 `profileStore.js` 的 `projectToEnvConfig` / `listProfiles` 对缺失槽位字段的防御性处理，避免旧数据访问 undefined 崩溃。
+- 修复 BYOK #3 / #4 的「加载模型」按钮失效
+- 修复 Sonnet 4 槽位的请求无法路由
+- 修复导入配置与拉取模型时只认前两个槽位
+- 修复旧方案数据缺字段时访问 undefined 崩溃
 
 ## [2.1.2] - 2026-06-28
 
 ### Fixed
-- 修复强制 `tool_choice` 指向的命名工具缺失时被静默丢弃：当请求用 `tool_choice={type:"tool",name:"finish"}` 等强制调用某工具、但该工具不在本轮 `tools` 也不在历史中时，旧逻辑会丢弃 tool_choice 并退回 auto（可能导致收尾工具 `finish` 不被调用）。现自动为该命名工具补齐占位定义并放行 tool_choice，使模型能真正调用它完成收尾。
-- 回退"工具调用中途断流时检测/重试/优雅收尾"的处理：经排查，上游中转（如 `10.0.1.36:8090`）在转发 `edit` 等大参数 `tool_use` 流时会在约 230 字节处**确定性截断**（重试逐字节相同的请求仍卡在同一位置，故重试无效）。该截断在加入检测前一直存在，只是旧逻辑会把残破 JSON 原样发给客户端、由 Devin 自动重做本轮（表现为"卡一下后继续"）。新增的检测/重试/优雅收尾反而打断了这一自愈路径（要么红错中断、要么静默丢失编辑）。现已完全回退到 `f628d9d` 的行为：截断的 `tool_use` 原样发出，交由客户端自愈重做。**根因在上游中转，需在中转侧排查为何对大参数 tool_use 流式输出在约 230 字节处断流。**
-- 修复流式 tool_use 参数被截断时整个代理进程崩溃退出（`TypeError: Cannot create property 'old_string' on string`）：当上游 SSE 在工具调用中途断流、`arguments` 为非法/截断 JSON 时，`normalizeToolArguments` 会原样返回字符串，随后 `remapKey` 在字符串上写属性而抛错并使 hybrid-server 退出重启。现 `normalizeToolInvocation` 在参数非普通对象时跳过键重映射并原样返回，`remapKey`/`remapArrayKey` 增加类型守卫作为兜底。
-- 修复 AmazonQ/Bedrock 报错 `TOOL_CONFIG_MISSING`（"The toolConfig field must be defined when using toolUse and toolResult content blocks"）：当历史消息含 `tool_use`/`tool_result` 内容块、但本次请求未携带工具定义时（工具被 KNOWN_TOOL 过滤丢弃或后续轮次未重发），代理会依据历史出现的工具名合成最小占位工具定义，确保 Bedrock 必需的 `toolConfig` 字段被填充；合成的占位工具不会强制 `tool_choice`。
+- 修复强制调用某个工具时该工具被静默丢弃，导致收尾动作不执行
+- 修复工具参数被截断时整个代理进程崩溃退出
+- 修复 AmazonQ / Bedrock 报 `TOOL_CONFIG_MISSING` 无法对话
+- 回退上一版的「工具调用断流检测」：断流根因在上游中转，新增的检测反而打断了 Devin 原本的自愈重做
 
 ## [2.1.1] - 2026-06-18
 
 ### Added
-- **标签页式 UI 重构**：全新的 3 标签页布局（配置连接、控制状态、系统补丁），信息分组更清晰
-- **快捷键支持**：Cmd/Ctrl + 1/2/3 快速切换标签页，提升专业用户操作效率
-- **智能配置徽章**：自动检测配置完整性，未配置时显示警告徽章，配置完整时自动隐藏
-- **淡入淡出动画**：流畅的标签页切换体验（0.2s ease-in-out）
-- **响应式优化**：完整的小屏幕适配（≤400px），自动调整字体、间距和徽章尺寸
-- **视觉增强**：底部彩色激活指示条、改进的阴影效果、BYOK 配置块彩色条纹边框
-- HTML 模板纳入 VSIX 打包，修复安装后模板丢失问题
+- **标签页式 UI 重构**：3 个标签页（配置连接、控制状态、系统补丁），信息分组更清晰
+- **快捷键**：Cmd/Ctrl + 1/2/3 快速切换标签页
+- **配置状态徽章**：配置不完整时在标签页上显示警告，配齐后自动隐藏
+- **小屏适配**：窄侧栏（≤400px）下自动调整字体与间距
+- 视觉细节优化：切换动画、激活指示条、BYOK 卡片彩色条纹
+- 修复安装后 HTML 模板丢失导致侧栏空白
 
 ### Changed
-- **Provider 模块化拆分**：将 `sidebarProvider.js` 拆分为 5 个独立服务模块（`services/diagnostics`、`services/environmentProbe`、`services/modelFetcher`、`services/promptTemplates`、`services/thinkingEffort`），Provider 代码量减少约 32%
-- **视图模块化**：侧栏 HTML 拆分为 `views/templates/partials/`（config-tab、control-tab、system-tab、tutorial），告别单文件 HTML 巨石
-- **视觉统一**：侧栏视觉语言统一，输入框溢出修复，提示词重构为可折叠卡片，折叠交互一致化
-- 基于上游 v2.1.0 + v2.0.4，包含配置热重载修复、模型验证增强、静默自动保存
-
-### Technical
-- 新增 `switchTab()` 函数处理标签页切换
-- 新增 `updateTabBadges()` 函数动态更新配置状态
-- 新增 CSS 关键帧动画和媒体查询（Tailwind CSS 构建）
-- `src/` 目录按功能分层：`managers/`、`providers/`、`services/`、`utils/`、`views/`、`proxy/`
-- 178 个单元测试，覆盖 Provider 拆分后的关键路径
+- 代码结构重构：侧栏逻辑拆分为 5 个服务模块、HTML 拆分为多个片段，便于后续维护
+- 侧栏视觉语言统一，修复输入框溢出，提示词改为可折叠卡片
+- 基于上游 v2.1.0 + v2.0.4，含配置热重载修复、模型校验增强、静默自动保存
 
 ## [2.0.4] - 2026-06-16
 
